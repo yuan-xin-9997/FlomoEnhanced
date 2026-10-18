@@ -225,8 +225,8 @@ ssh yuanxin@192.168.0.111 "cd /opt/FlomoEnhanced && /opt/FlomoEnhanced/.runtime/
 | 项目 | 实测值 |
 |---|---|
 | Jenkins 任务 | `FlomoEnhanced`（`http://192.168.0.111:8080/job/FlomoEnhanced/`，`color=blue`） |
-| 最近构建 | `#2`，`result=SUCCESS`，耗时 43740 ms（约 43.7 秒） |
-| 已部署提交 | `/opt/FlomoEnhanced/DEPLOYED_COMMIT` = `ae9fd998ec1f06e765ced5dcd21e98d577ed6345` |
+| 最近构建 | `#4`，`result=SUCCESS`，耗时 44300 ms（约 44.3 秒；`#2` 为首次交付、`#3` 为标签页图标） |
+| 已部署提交 | `/opt/FlomoEnhanced/DEPLOYED_COMMIT` = `128c7f50f03753fcf85ad3f17053bbe20ab71679`（界面重做，见 §9.6） |
 | 四个阶段 | `prepare` / `build and test` / `update`（rsync + systemctl）/ `verify`（健康检查）全部通过 |
 
 ### 9.2 运行时状态
@@ -264,6 +264,20 @@ ssh yuanxin@192.168.0.111 "cd /opt/FlomoEnhanced && /opt/FlomoEnhanced/.runtime/
 - 自动化验收与人工验收**在真实数据库里留下了测试数据**（用户、模板、想法）。当前 `GET /api/health` 统计：`users=3`（另有隔离测试用户）、`templates=6`、`memos=47`。
   这些数据仅用于验收，若要清空可在停服后删除 `/opt/FlomoEnhanced/.data` 下的 SQLite 文件再重启（会丢失所有业务数据，请确认后操作）。
 - `POST /api/auth/login` 等接口在首次未登录访问 `/api/auth/me` 时会返回一次 `401`，属于前端启动时的预期探测，控制台中的该条 401 不是错误。
+
+### 9.6 界面重做（桌面端参照 flomo）的部署与验收
+
+| 验证项 | 结果 |
+|---|---|
+| 构建 | Jenkins `#4`，`SUCCESS`；`/opt/FlomoEnhanced/DEPLOYED_COMMIT` = `128c7f50f03753fcf85ad3f17053bbe20ab71679` |
+| 服务 | `systemctl is-active` → `active`；`GET /api/health` → 200 |
+| 静态资源 | 线上 `index.html` 引用的 `index-*.css` 含 `--sidebar-w`、`.side-nav-link.active`、`#30cf79`（品牌绿），**不含**旧配色 `#f7f6f3` 与旧 `.topbar` |
+| 外部验收脚本 | `node scripts/acceptance-e2e.mjs --external http://192.168.0.111:35080` → **143/143 通过，0 失败** |
+| 浏览器实测（1000×700 视口） | 侧栏 236 px 常驻（`position: sticky`、`flex-direction: column`）位于 x=0；内容区 x=236、宽 764；记录列 716 px；侧栏热力图 14 周无横向溢出 |
+| 视觉取值实测 | 页面底色 `rgb(242,242,242)`、卡片白底圆角 10 px、选中导航 `rgb(48,207,121)` 绿色胶囊、`#标签` 蓝色胶囊 `rgb(47,111,237)` / `rgb(234,241,254)`、发送键圆角 50% |
+| 功能回归 | 撰写（选模板 → 填字段 → 绿色发送键提交 → 列表出现新记录 → 侧栏计数 1→2）、列头「无模板」筛选、侧栏标签点击筛选（URL `?tag=…`）、编辑弹层开合、洞察页 7 张图表渲染，控制台无报错 |
+| 窄屏（视口 ≤900 px） | 侧栏收成顶部条（白底 + 底部分割线），导航横向排列，热力图/标签区隐藏，页面无横向滚动 |
+| 本机专项测试 | `npm test` 302 项全绿（shared 53 / web 114 / api 135）；`npm run verify:e2e`（本地模式）144/144 通过 |
 
 ## 附：本次交付时的静态校验记录（真实输出）
 
