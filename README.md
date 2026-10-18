@@ -135,8 +135,11 @@ npm run dev:web        # 开发前端（vite dev，代理 /api 到 127.0.0.1:350
   SQL 通配符转义、CSV 的 BOM/CRLF/RFC 4180、登录限流 429、超大请求体 413）。
 - **性能**：1 万条想法的洞察分析实测中位 ~468ms（要求 p95 < 800ms）；1 千条 ~29ms。
 - **已通过静态校验**：`JenkinsConfig/` 全部文件与 `docs/DEPLOY.md`。
-  校验记录：`bash -n deploy.sh`（服务器 bash 5.2.21）、`node --check health.mjs`、Jenkins `pipeline-model-converter/validate`（`Jenkinsfile successfully validated.`）、
+  校验记录：`bash -n deploy.sh`（服务器 bash 5.2.21）、`node --check health.mjs`、`node --check scripts/acceptance-e2e.mjs`、Jenkins `pipeline-model-converter/validate`（`Jenkinsfile successfully validated.`）、
   `visudo -cf`（sudoers 片段解析正确）、`systemd-analyze verify`（unit 通过）、`job-config.xml` XML 解析通过。详见 `docs/DEPLOY.md` 末尾表格。
-- **尚未验证**：流水线真实构建、服务器目录 `/opt/FlomoEnhanced` 与 systemd 服务的实际运行结果，
-  以及浏览器端交互，均需按 `docs/DEPLOY.md` 执行首次部署后确认；本 README 的功能描述以冻结契约
-  `docs/SPEC.md`、`docs/ANALYTICS.md`（含末尾的裁决附录）为准。
+- **已部署并验收（2026-10-18）**：Jenkins 任务 `FlomoEnhanced` 构建 `#2` `SUCCESS`，部署提交 `ae9fd99`；
+  `flomoenhanced.service` `active`（`User=jenkins`），监听 `0.0.0.0:35080`，`/api/health` 200；
+  `node scripts/acceptance-e2e.mjs --external http://192.168.0.111:35080` **143 项断言全部通过**；
+  项目经理浏览器人工验收走通 注册 → 建模板 → 记想法（含/不含模板）→ 洞察分析（概览 + 单模板统计）→ CSV 导出 → 改密码 → 多用户数据隔离。
+  完整证据与残留数据说明见 `docs/DEPLOY.md` 第 ⑨ 节。
+- 本 README 的功能描述以冻结契约 `docs/SPEC.md`、`docs/ANALYTICS.md`（含末尾的裁决附录）为准。

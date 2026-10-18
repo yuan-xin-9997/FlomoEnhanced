@@ -105,3 +105,13 @@ Jenkins 构建日志：<http://192.168.0.111:8080/job/FlomoEnhanced/lastBuild/co
 - `sudoers` 片段：`sudo -n visudo -cf <file>` 返回「解析正确」。
 - `flomoenhanced.service`：在服务器上 `systemd-analyze verify` 通过（`ExecStart` 指向的自带 Node 尚未安装时只报该路径不可执行，属部署前预期）。
 - `job-config.xml`：XML 解析通过（PowerShell `[xml]` 与服务器 `python3 xml.etree` 均解析成功）。
+
+## 9. 部署结果与验收（2026-10-18 实测）
+
+- 构建结果：任务 `FlomoEnhanced` 已创建，构建 `#2` `SUCCESS`（耗时约 43.7 s）；部署提交 `ae9fd998ec1f06e765ced5dcd21e98d577ed6345`。
+- 运行状态：`flomoenhanced.service` `active`，`User=jenkins`，`0.0.0.0:35080` 已监听；`/api/health` 返回 200（`status=ok`、`db.ok=true`）。
+- 端到端验收：`node scripts/acceptance-e2e.mjs --external http://192.168.0.111:35080` → **143/143 断言通过**。
+  - 该脚本位于仓库 `scripts/`，用 `--external <url>` 对已部署实例做黑盒验收（默认无参数时对本地内存实例验收）。
+  - 也可用根目录脚本：`npm run verify:e2e`（本地）/ `node scripts/acceptance-e2e.mjs --external http://192.168.0.111:35080`（线上）。
+- 浏览器人工验收：注册 → 建模板（文本 + 金额字段）→ 记想法（含/不含模板）→ 洞察分析（概览 + 单模板统计）→ CSV 导出 → 修改密码 → 多用户数据隔离，全部通过。
+- 完整证据与残留说明见 [`../docs/DEPLOY.md`](../docs/DEPLOY.md) 第 ⑨ 节。

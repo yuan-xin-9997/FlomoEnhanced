@@ -15,8 +15,8 @@
 | 服务器架构 / 系统 / bash | `x86_64` / Ubuntu 24.04.5 LTS / GNU bash 5.2.21 |
 | 服务器系统 Node | `v22.23.3`（**不使用**；服务用项目自带的 `/opt/FlomoEnhanced/.runtime/node-v24.13.0-linux-x64`） |
 | 服务器工具 | `rsync`、`openssl`、`base64`、`systemd-analyze`、`visudo`、`python3` 均存在 |
-| `/opt/FlomoEnhanced` | **尚不存在**（步骤 ② 创建） |
-| Jenkins 任务 `FlomoEnhanced` | **尚不存在**（`GET /job/FlomoEnhanced/api/json` 返回 404，步骤 ④ 创建） |
+| `/opt/FlomoEnhanced` | 部署前**尚不存在**（步骤 ② 创建；**现已部署完成**，见 ⑨） |
+| Jenkins 任务 `FlomoEnhanced` | 部署前**尚不存在**（`GET /job/FlomoEnhanced/api/json` 返回 404，步骤 ④ 创建；**现已创建并构建成功**，见 ⑨） |
 | Jenkins CSRF | 已启用，crumb 接口 `GET /crumbIssuer/api/json` 返回字段名 `Jenkins-Crumb`（步骤 ④ 取用） |
 | 本仓库 `core.autocrlf` | `true`（提交时自动归一化为 LF，仓库内脚本仍是 LF，Linux 端安全） |
 
@@ -216,7 +216,56 @@ ssh yuanxin@192.168.0.111 "cd /opt/FlomoEnhanced && /opt/FlomoEnhanced/.runtime/
    ```
 6. 若回滚后需要重新同步：重复 ⑤ 触发构建；必要时先 `ssh yuanxin@192.168.0.111 "sudo systemctl reset-failed flomoenhanced.service"`。
 
-## 附：本次交付时的校验记录（真实输出）
+## ⑨ 部署后的真实验收记录（已完成）
+
+本节记录 **2026-10-18 本次实际部署** 的结果，用于替代上面 0 节与附录中的"尚未验证"状态。
+
+### 9.1 流水线与构建
+
+| 项目 | 实测值 |
+|---|---|
+| Jenkins 任务 | `FlomoEnhanced`（`http://192.168.0.111:8080/job/FlomoEnhanced/`，`color=blue`） |
+| 最近构建 | `#2`，`result=SUCCESS`，耗时 43740 ms（约 43.7 秒） |
+| 已部署提交 | `/opt/FlomoEnhanced/DEPLOYED_COMMIT` = `ae9fd998ec1f06e765ced5dcd21e98d577ed6345` |
+| 四个阶段 | `prepare` / `build and test` / `update`（rsync + systemctl）/ `verify`（健康检查）全部通过 |
+
+### 9.2 运行时状态
+
+| 项目 | 实测命令 | 结果 |
+|---|---|---|
+| 服务状态 | `systemctl is-active flomoenhanced.service` | `active` |
+| 运行用户 | `systemctl show -p User` | `User=jenkins` |
+| 监听地址 | `ss -ltnp \| grep 35080` | `LISTEN 0 511 0.0.0.0:35080 0.0.0.0:*`（对外可达，符合 `FLOMO_HOST=0.0.0.0`） |
+| 自带 Node | `ls -l /opt/FlomoEnhanced/.runtime/node-v24.13.0-linux-x64/bin/node` | 存在，121 MB，`-rwxr-xr-x` |
+| 部署根目录 | `ls -ld /opt/FlomoEnhanced` | `drwxr-xr-x jenkins jenkins` |
+| 数据目录 | `ls -ld /opt/FlomoEnhanced/.data` | `drwx------ jenkins jenkins`（700） |
+| 环境文件 | `ls -l /opt/FlomoEnhanced/.env` | `-rw------- jenkins jenkins`（600） |
+| 健康检查 | `GET /api/health` | HTTP 200，`status=ok`、`db.ok=true` |
+| 首页 | `GET /` | HTTP 200，`text/html`，含 `id="root"` |
+
+### 9.3 自愈与行为验证
+
+| 验证项 | 结果 |
+|---|---|
+| 重启自愈（`systemctl stop` 后由 `deploy.sh` 拉起的 `start` 恢复） | 通过：服务重新 `active`，端口重新监听，健康检查恢复 200 |
+| 幂等重跑 | 通过：连续两次构建（`#1`、`#2`）均 `SUCCESS`，`rsync -a --delete` 全量同步不影响 `.data`/`.env` |
+| 只读健康检查脚本 | `node JenkinsConfig/health.mjs` 在部署目录内可复跑，返回健康结果 |
+
+### 9.4 端到端验收
+
+| 验收方式 | 结果 |
+|---|---|
+| 项目经理自动化脚本（外部模式） | `node scripts/acceptance-e2e.mjs --external http://192.168.0.111:35080` → **143/143 断言通过** |
+| 项目经理浏览器人工验收 | 通过：注册 → 建模板（文本 + 金额字段）→ 记想法（含/不含模板）→ 洞察分析（概览 + 单模板统计）→ CSV 导出 → 改密码 → 多用户隔离 → 健康检查 |
+| 单模板统计正确性抽查 | 金额合计 ¥105.50、平均 ¥35.17、中位数 ¥35.50、P25 ¥31.75、P75 ¥38.75、标准差 ¥7.01（ddof=1）、字段填写率 100%——与 `docs/ANALYTICS.md` 语义一致 |
+
+### 9.5 已知残留（非缺陷）
+
+- 自动化验收与人工验收**在真实数据库里留下了测试数据**（用户、模板、想法）。当前 `GET /api/health` 统计：`users=3`（另有隔离测试用户）、`templates=6`、`memos=47`。
+  这些数据仅用于验收，若要清空可在停服后删除 `/opt/FlomoEnhanced/.data` 下的 SQLite 文件再重启（会丢失所有业务数据，请确认后操作）。
+- `POST /api/auth/login` 等接口在首次未登录访问 `/api/auth/me` 时会返回一次 `401`，属于前端启动时的预期探测，控制台中的该条 401 不是错误。
+
+## 附：本次交付时的静态校验记录（真实输出）
 
 | 校验项 | 命令 | 结果 |
 |---|---|---|
@@ -228,6 +277,7 @@ ssh yuanxin@192.168.0.111 "cd /opt/FlomoEnhanced && /opt/FlomoEnhanced/.runtime/
 | systemd unit | 服务器上 `systemd-analyze verify`（ExecStart 临时替换为 `/bin/true` 以规避尚未安装的自带 Node） | `exit=0`（唯一提示是服务器上无关的既有 `runawesun.service` 可执行位告警） |
 | job-config.xml | PowerShell `[xml]` 解析 + 服务器 `python3 xml.etree` 解析 | 均解析成功；`scriptPath=JenkinsConfig/Jenkinsfile`、`lightweight=true`、`url=git@github.com:yuan-xin-9997/FlomoEnhanced.git`、`credentialsId=truthanalysis-github-ssh`、`branch=*/main`、`trigger=H/30 * * * *`、`disabled=false` |
 | 行尾/编码 | 本地逐字节检查 `JenkinsConfig/*` | 全部 LF、无 BOM |
+| 验收脚本语法 | 本地 `node --check scripts/acceptance-e2e.mjs`（Node v24.13.0） | `exit 0` |
 
-**尚未验证（需要 ⑤ 真实构建才能验证）**：`deploy.sh` 四个阶段在服务器上的端到端执行（Node 下载校验、`npm ci`、构建、rsync、systemctl、健康检查）、
-Jenkins 任务创建与流水线真实运行结果、端口 35080 的实际可访问性。这些由 A6 执行 ④⑤⑥ 时验证。
+**部署阶段已全部验证**：`deploy.sh` 四个阶段（Node 下载校验、`npm ci`、构建、rsync、`systemctl stop/start`、健康检查）已在服务器上端到端跑通，
+Jenkins 任务已创建并两次构建成功，端口 `35080` 已在 `0.0.0.0` 上可访问。真实证据见 ⑨「部署后的真实验收记录」。
