@@ -102,14 +102,18 @@ ssh yuanxin@192.168.0.111 "rm -rf /tmp/flomoenhanced-stage"
 
 ```powershell
 # 1) 取 crumb（字段名为 Jenkins-Crumb）
-$crumb = (curl.exe -s -u admin:admin "http://192.168.0.111:8080/crumbIssuer/api/json" | ConvertFrom-Json).crumb
+#    ⚠️ Jenkins 的 crumb 与会话 Cookie 绑定：取 crumb 与后续 POST 必须共用同一个 Cookie（用 -c/-b 同一个 cookie jar）。
+#    若只带 -u 不带 cookie jar，POST 会返回 403 "No valid crumb was included in the request"（实测踩到过）。
+$cj = "$env:TEMP\jenkins-cookies.txt"
+if (Test-Path $cj) { Remove-Item $cj }
+$crumb = (curl.exe -s -c $cj -u admin:admin "http://192.168.0.111:8080/crumbIssuer/api/json" | ConvertFrom-Json).crumb
 "crumb=$crumb"
 
 # 2) 确认任务尚不存在（期望 HTTP=404）
 curl.exe -s -o NUL -w "存在性检查 HTTP=%{http_code}`n" -u admin:admin "http://192.168.0.111:8080/job/FlomoEnhanced/api/json"
 
 # 3) 创建任务（导入 JenkinsConfig/job-config.xml）
-curl.exe -s -o "$env:TEMP\createItem.out" -w "createItem HTTP=%{http_code}`n" -u admin:admin `
+curl.exe -s -b $cj -c $cj -o "$env:TEMP\createItem.out" -w "createItem HTTP=%{http_code}`n" -u admin:admin `
   -H "Jenkins-Crumb: $crumb" -H "Content-Type: application/xml" `
   -X POST "http://192.168.0.111:8080/createItem?name=FlomoEnhanced" --data-binary "@JenkinsConfig/job-config.xml"
 Get-Content "$env:TEMP\createItem.out"   # 成功时通常为空；失败时是 Jenkins 的错误 HTML
@@ -127,8 +131,8 @@ curl.exe -s -u admin:admin "http://192.168.0.111:8080/job/FlomoEnhanced/config.x
 ## ⑤ 触发构建并查看日志
 
 ```powershell
-# 触发（无参数任务用 /build；返回 201 表示已入队）
-curl.exe -s -o NUL -w "build HTTP=%{http_code}`n" -u admin:admin -H "Jenkins-Crumb: $crumb" -X POST "http://192.168.0.111:8080/job/FlomoEnhanced/build"
+# 触发（无参数任务用 /build；返回 201 表示已入队。$crumb/$cj 沿用 ④ 的同一个 cookie jar）
+curl.exe -s -b $cj -o NUL -w "build HTTP=%{http_code}`n" -u admin:admin -H "Jenkins-Crumb: $crumb" -X POST "http://192.168.0.111:8080/job/FlomoEnhanced/build"
 
 # 进度与结果（result 为 null 表示还在跑；SUCCESS 为通过）
 curl.exe -s -u admin:admin "http://192.168.0.111:8080/job/FlomoEnhanced/lastBuild/api/json?tree=number,building,result,duration"
@@ -195,8 +199,8 @@ ssh yuanxin@192.168.0.111 "cd /opt/FlomoEnhanced && /opt/FlomoEnhanced/.runtime/
    ```powershell
    git revert <出问题的提交>
    git push origin main
-   # 触发一次构建（同 ⑤）
-   curl.exe -s -o NUL -w "build HTTP=%{http_code}`n" -u admin:admin -H "Jenkins-Crumb: $crumb" -X POST "http://192.168.0.111:8080/job/FlomoEnhanced/build"
+   # 触发一次构建（同 ⑤；新开终端需按 ④ 重新取 crumb 并共用同一 cookie jar）
+   curl.exe -s -b $cj -o NUL -w "build HTTP=%{http_code}`n" -u admin:admin -H "Jenkins-Crumb: $crumb" -X POST "http://192.168.0.111:8080/job/FlomoEnhanced/build"
    ```
    由于 `rsync -a --delete` 是幂等全量同步，重新构建即可把 `/opt/FlomoEnhanced` 恢复到旧版本代码。
 3. **紧急停服**（例如新版接口疯狂报错、需要立刻止损）
