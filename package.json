@@ -1,0 +1,26 @@
+{
+  "name": "flomoenhanced",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "浮墨增强版 —— 以 flomo 快速记录体验为基础，增加模板与洞察分析（FlomoEnhanced）",
+  "engines": {
+    "node": ">=24"
+  },
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "build:shared": "npm run build -w @flomo/shared",
+    "build": "npm run build:shared && npm run build -w @flomo/web && npm run build -w @flomo/api",
+    "pretypecheck": "npm run build:shared",
+    "typecheck": "npm run typecheck -w @flomo/shared && npm run typecheck -w @flomo/web && npm run typecheck -w @flomo/api",
+    "pretest": "npm run build:shared",
+    "test": "npm run test -w @flomo/shared && npm run test -w @flomo/web && npm run test -w @flomo/api",
+    "start": "node --no-warnings=ExperimentalWarning apps/api/dist/index.js",
+    "verify:e2e": "node scripts/acceptance-e2e.mjs",
+    "dev:api": "npm run dev -w @flomo/api",
+    "dev:web": "npm run dev -w @flomo/web"
+  }
+}

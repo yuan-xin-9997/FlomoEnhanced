@@ -1,0 +1,1 @@
+jenkins ALL=(root) NOPASSWD: /usr/bin/systemctl stop flomoenhanced.service, /usr/bin/systemctl start flomoenhanced.service

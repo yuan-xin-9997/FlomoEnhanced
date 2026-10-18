@@ -1,0 +1,34 @@
+pipeline {
+    agent { label 'built-in' }
+    options {
+        skipDefaultCheckout(true)
+        disableConcurrentBuilds()
+        timestamps()
+        timeout(time: 60, unit: 'MINUTES')
+        buildDiscarder(logRotator(numToKeepStr: '20'))
+    }
+    triggers { pollSCM('H/30 * * * *') }
+    stages {
+        stage('Checkout GitHub') {
+            steps { checkout scm }
+        }
+        stage('Build and test') {
+            // 安装依赖、类型检查、测试、构建；本阶段失败不会停止正在运行的服务
+            steps { sh 'bash JenkinsConfig/deploy.sh prepare' }
+        }
+        stage('Stop service') {
+            steps { sh 'bash JenkinsConfig/deploy.sh stop' }
+        }
+        stage('Update /opt/FlomoEnhanced') {
+            steps { sh 'bash JenkinsConfig/deploy.sh update' }
+        }
+        stage('Start and verify') {
+            steps { sh 'bash JenkinsConfig/deploy.sh start' }
+        }
+    }
+    post {
+        failure {
+            echo '部署失败：请查看 Console Output 中红色报错的阶段。构建与测试阶段失败不会停止正在运行的服务；若在 Stop service 之后失败，服务可能处于停止状态，请登录服务器执行 systemctl status flomoenhanced.service 与 journalctl -u flomoenhanced.service -n 200 排查，修复后重新构建。本流水线不自动回滚。'
+        }
+    }
+}

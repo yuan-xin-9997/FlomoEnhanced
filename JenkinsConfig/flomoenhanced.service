@@ -1,0 +1,29 @@
+[Unit]
+Description=FlomoEnhanced (浮墨增强版) Web Service
+Documentation=file:/opt/FlomoEnhanced/JenkinsConfig/README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=jenkins
+Group=jenkins
+WorkingDirectory=/opt/FlomoEnhanced
+# 使用项目自带的 Node 24.13.0 运行时（由 JenkinsConfig/deploy.sh prepare 下载并校验）
+Environment=PATH=/opt/FlomoEnhanced/.runtime/node-v24.13.0-linux-x64/bin:/usr/local/bin:/usr/bin:/bin
+Environment=NODE_NO_WARNINGS=1
+Environment=NODE_ENV=production
+Environment=FLOMO_DATA_DIR=/opt/FlomoEnhanced/.data
+# 监听地址与端口，取值与 .env 一致；如需调整请修改 /opt/FlomoEnhanced/.env 后重启服务
+Environment=FLOMO_HOST=0.0.0.0
+Environment=FLOMO_PORT=35080
+EnvironmentFile=-/opt/FlomoEnhanced/.env
+ExecStart=/opt/FlomoEnhanced/.runtime/node-v24.13.0-linux-x64/bin/node /opt/FlomoEnhanced/apps/api/dist/index.js
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+KillSignal=SIGTERM
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target
