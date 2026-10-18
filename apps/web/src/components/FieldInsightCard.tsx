@@ -207,7 +207,7 @@ export default function FieldInsightCard({ insight, def }: FieldInsightCardProps
 export function NumericFieldRankViz({ items }: { items: Array<{ name: string; value: number }> }): JSX.Element {
   return (
     <Viz title="数值字段合计排行" sub="跨模板汇总，取前 15" empty={items.length === 0} height={Math.max(200, items.length * 26)}>
-      <EChart option={buildRankedBarOption(items, { limit: 15, color: '#a78bfa' })} height={Math.max(200, items.length * 26)} />
+      <EChart option={buildRankedBarOption(items, { limit: 15, color: '#9b8cf9' })} height={Math.max(200, items.length * 26)} />
     </Viz>
   );
 }

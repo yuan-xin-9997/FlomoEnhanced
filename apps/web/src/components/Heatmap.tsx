@@ -1,5 +1,6 @@
 /**
  * GitHub 风格热力图（最近 N 周，5 档颜色，悬浮提示，点击某天回调）。
+ * 格子尺寸由 `size` 决定（写入内联 CSS 变量 `--heat-cell`，样式表按变量排版）。
  */
 import { buildHeatmapGrid } from '../lib/heatmap';
 
@@ -9,21 +10,30 @@ export interface HeatmapProps {
   weeks?: number;
   /** 今天（便于测试/固定区间） */
   today?: string;
+  /** 格子边长（px），默认 12 */
+  size?: number;
   onSelectDay?: (dayKey: string) => void;
 }
 
 const WEEKDAY_LABELS = ['一', '', '三', '', '五', '', '日'];
+const LEVEL_COLORS = ['#ededed', '#c9f0dd', '#8fe0b4', '#4fcf8b', '#30cf79'];
 
-export default function Heatmap({ days, weeks = 12, today, onSelectDay }: HeatmapProps): JSX.Element {
+export default function Heatmap({
+  days,
+  weeks = 12,
+  today,
+  size = 12,
+  onSelectDay,
+}: HeatmapProps): JSX.Element {
   const grid = buildHeatmapGrid(days, today === undefined ? { weeks } : { weeks, today });
 
   return (
-    <div>
+    <div className={`heatmap size-${size}`} style={{ ['--heat-cell' as string]: `${size}px` }}>
       <div className="heatmap-months" aria-hidden="true">
         {grid.weeks.map((_, column) => {
           const label = grid.monthLabels.find((item) => item.column === column);
           return (
-            <span key={column} style={{ width: 12 }}>
+            <span key={column} className="heatmap-month">
               {label?.label ?? ''}
             </span>
           );
@@ -60,11 +70,9 @@ export default function Heatmap({ days, weeks = 12, today, onSelectDay }: Heatma
       </div>
       <div className="heatmap-legend">
         <span>少</span>
-        <i style={{ background: '#ece7df' }} />
-        <i style={{ background: '#c6e3cf' }} />
-        <i style={{ background: '#86c99c' }} />
-        <i style={{ background: '#43a86a' }} />
-        <i style={{ background: '#1f7a45' }} />
+        {LEVEL_COLORS.map((color) => (
+          <i key={color} style={{ background: color }} />
+        ))}
         <span>多</span>
         <span className="spacer" />
         <span>

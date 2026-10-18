@@ -1,19 +1,20 @@
 /**
  * 记录页（/）—— 核心页面。
  * 顶部撰写区（模板选择 + 按字段类型渲染的表单）、想法列表（游标分页）、
- * 筛选（模板/标签/日期/关键字）、侧栏概览（热力图 + 连续记录）。
+ * 列头（范围下拉 + 搜索）与可展开筛选（模板/标签/日期/关键字）。
+ * 筛选条件与 URL 查询参数双向同步，便于侧栏（标签、热力图）直接跳转。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
-import type { FieldValue, Memo, MemoSummary, Template } from '@flomo/shared';
+import { Link, useSearchParams } from 'react-router-dom';
+import type { FieldValue, Memo, Template } from '@flomo/shared';
 import { memosApi, templatesApi, errorMessage } from '../api/client';
-import Heatmap from '../components/Heatmap';
+import FieldForm from '../components/FieldForm';
+import Icon from '../components/icons';
 import MemoCard from '../components/MemoCard';
 import MemoEditModal from '../components/MemoEditModal';
-import FieldForm from '../components/FieldForm';
-import { EmptyState, ErrorBox, Kpi, Loading, SkeletonList } from '../components/ui';
+import { EmptyState, ErrorBox, SkeletonList } from '../components/ui';
 import { emptyDraft, isDraftEmpty, normalizeDraft } from '../lib/fieldForm';
-import { formatCount, formatRatio } from '../lib/format';
+import { formatCount } from '../lib/format';
 import {
   NO_TEMPLATE_FILTER,
   emptyFilters,
@@ -22,20 +23,48 @@ import {
   memoBodyOf,
 } from '../lib/memoQuery';
 import type { MemoFilters } from '../lib/memoQuery';
+import { parseDayKey } from '../lib/dates';
 import { useDocumentTitle } from '../lib/useDocumentTitle';
-import { useSession } from '../state/session';
+import { useOverview } from '../state/overview';
 import { useToast } from '../state/toast';
 
 const PAGE_SIZE = 20;
 
+/** URL 查询参数 → 筛选条件（`template=none` 表示无模板） */
+function filtersFromSearch(search: URLSearchParams): MemoFilters {
+  const template = search.get('template') ?? '';
+  const day = (key: string): string => {
+    const value = search.get(key) ?? '';
+    return parseDayKey(value) === null ? '' : value;
+  };
+  return {
+    templateId: template === 'none' ? NO_TEMPLATE_FILTER : template,
+    tag: (search.get('tag') ?? '').replace(/^#/, ''),
+    from: day('from'),
+    to: day('to'),
+    q: search.get('q') ?? '',
+  };
+}
+
+/** 筛选条件 → URL 查询参数（空值不写入） */
+function searchFromFilters(filters: MemoFilters): URLSearchParams {
+  const search = new URLSearchParams();
+  if (filters.templateId === NO_TEMPLATE_FILTER) search.set('template', 'none');
+  else if (filters.templateId !== '') search.set('template', filters.templateId);
+  if (filters.tag !== '') search.set('tag', filters.tag);
+  if (filters.from !== '') search.set('from', filters.from);
+  if (filters.to !== '') search.set('to', filters.to);
+  if (filters.q.trim() !== '') search.set('q', filters.q);
+  return search;
+}
+
 export default function MemoPage(): JSX.Element {
   useDocumentTitle('记录');
-  const session = useSession();
+  const overview = useOverview();
   const toast = useToast();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const [templates, setTemplates] = useState<Template[]>([]);
-  const [summary, setSummary] = useState<MemoSummary | null>(null);
-  const [summaryError, setSummaryError] = useState('');
 
   const [composerTemplateId, setComposerTemplateId] = useState('');
   const [content, setContent] = useState('');
@@ -44,17 +73,21 @@ export default function MemoPage(): JSX.Element {
   const [formError, setFormError] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
-  const [filters, setFilters] = useState<MemoFilters>(emptyFilters);
   const [items, setItems] = useState<Memo[]>([]);
   const [total, setTotal] = useState(0);
   const [listLoading, setListLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [listError, setListError] = useState('');
   const [editing, setEditing] = useState<Memo | null>(null);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+
+  const filters = useMemo(() => filtersFromSearch(searchParams), [searchParams]);
+  const filtersKey = searchParams.toString();
 
   const cursorRef = useRef<string | null>(null);
   const requestSeq = useRef(0);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const searchRef = useRef<HTMLInputElement | null>(null);
 
   const composerTemplate = useMemo(
     () => templates.find((template) => template.id === composerTemplateId),
@@ -72,15 +105,6 @@ export default function MemoPage(): JSX.Element {
     }
   }, [toast]);
 
-  const loadSummary = useCallback(async (): Promise<void> => {
-    setSummaryError('');
-    try {
-      setSummary(await memosApi.summary());
-    } catch (error) {
-      setSummaryError(errorMessage(error));
-    }
-  }, []);
-
   const loadMemos = useCallback(
     async (mode: 'reset' | 'more'): Promise<void> => {
       const seq = requestSeq.current + 1;
@@ -90,7 +114,10 @@ export default function MemoPage(): JSX.Element {
       setListError('');
       try {
         const response = await memosApi.list(
-          filtersToQuery(filters, { limit: PAGE_SIZE, cursor: mode === 'more' ? cursorRef.current : null }),
+          filtersToQuery(filtersFromSearch(new URLSearchParams(filtersKey)), {
+            limit: PAGE_SIZE,
+            cursor: mode === 'more' ? cursorRef.current : null,
+          }),
         );
         if (seq !== requestSeq.current) return;
         setItems((previous) => (mode === 'more' ? [...previous, ...response.items] : response.items));
@@ -107,13 +134,12 @@ export default function MemoPage(): JSX.Element {
         }
       }
     },
-    [filters],
+    [filtersKey],
   );
 
   useEffect(() => {
     void loadTemplates();
-    void loadSummary();
-  }, [loadTemplates, loadSummary]);
+  }, [loadTemplates]);
 
   useEffect(() => {
     cursorRef.current = null;
@@ -125,6 +151,37 @@ export default function MemoPage(): JSX.Element {
     setDraft(composerTemplate === undefined ? {} : emptyDraft(composerTemplate.fields));
     setFieldErrors({});
   }, [composerTemplate]);
+
+  // Ctrl / Cmd + K 聚焦搜索框
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault();
+        searchRef.current?.focus();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
+
+  /* ------------------------------ 筛选 ------------------------------ */
+
+  const patchFilters = (patch: Partial<MemoFilters>): void => {
+    setSearchParams(searchFromFilters({ ...filters, ...patch }), { replace: true });
+  };
+
+  const clearFilters = (): void => {
+    setSearchParams(new URLSearchParams(), { replace: true });
+  };
+
+  const activeBeyondTemplate =
+    filters.tag !== '' || filters.from !== '' || filters.to !== '' || filters.q.trim() !== '';
+  const templateLabel =
+    filters.templateId === ''
+      ? '全部笔记'
+      : filters.templateId === NO_TEMPLATE_FILTER
+        ? '无模板'
+        : (templates.find((template) => template.id === filters.templateId)?.name ?? '全部笔记');
 
   /* ------------------------------ 提交 ------------------------------ */
 
@@ -169,7 +226,7 @@ export default function MemoPage(): JSX.Element {
       toast.success('已记录');
       cursorRef.current = null;
       void loadMemos('reset');
-      void loadSummary();
+      void overview.reload();
       textareaRef.current?.focus();
     } catch (error) {
       setFormError(errorMessage(error));
@@ -186,7 +243,7 @@ export default function MemoPage(): JSX.Element {
       toast.success('已删除');
       cursorRef.current = null;
       void loadMemos('reset');
-      void loadSummary();
+      void overview.reload();
     } catch (error) {
       toast.error(errorMessage(error));
     }
@@ -199,289 +256,252 @@ export default function MemoPage(): JSX.Element {
     }
   };
 
-  const patchFilters = (patch: Partial<MemoFilters>): void => setFilters((previous) => ({ ...previous, ...patch }));
-
-  const jumpToDay = (day: string): void => {
-    patchFilters({ from: day, to: day });
-    toast.push(`已筛选 ${day} 的记录`);
-  };
-
   /* ------------------------------ 渲染 ------------------------------ */
 
   return (
-    <div className="page">
-      <div className="page-head">
-        <div>
-          <h1 className="page-title">记录</h1>
-          <p className="page-sub">
-            {session.user === null ? '随手记下想法' : `${session.user.username}，随时记录你的想法`} · 可用 <code>#标签</code>{' '}
-            归类
-          </p>
+    <div className="page page-memo">
+      <header className="col-head">
+        <div className="col-title">
+          <label className="sr-only" htmlFor="filter-template">
+            模板范围
+          </label>
+          <select
+            id="filter-template"
+            className="col-title-select"
+            value={filters.templateId}
+            onChange={(event) => patchFilters({ templateId: event.target.value })}
+          >
+            <option value="">全部笔记</option>
+            <option value={NO_TEMPLATE_FILTER}>无模板</option>
+            {templates.map((template) => (
+              <option key={template.id} value={template.id}>
+                {template.icon} {template.name}
+              </option>
+            ))}
+          </select>
+          <Icon name="chevron-down" size={15} className="col-title-chevron" />
         </div>
-        <Link to="/templates" className="btn">
-          管理模板
-        </Link>
-      </div>
 
-      <div className="memo-layout">
-        <div>
-          <section className="composer">
-            <label className="sr-only" htmlFor="composer-content">
-              记录内容
-            </label>
-            <textarea
-              id="composer-content"
-              ref={textareaRef}
-              className="textarea composer-input"
-              autoFocus
-              placeholder="写点什么… 支持 #标签，Ctrl / Cmd + Enter 快速提交"
-              value={content}
-              onChange={(event) => setContent(event.target.value)}
-              onKeyDown={onComposerKeyDown}
+        <div className="col-tools">
+          <div className="search-pill">
+            <Icon name="search" size={15} />
+            <input
+              id="filter-q"
+              ref={searchRef}
+              className="search-input"
+              value={filters.q}
+              placeholder="搜索笔记"
+              aria-label="搜索笔记"
+              onChange={(event) => patchFilters({ q: event.target.value })}
             />
-
-            <div className="composer-fields">
-              <div className="field">
-                <label className="label" htmlFor="composer-template">
-                  模板
-                </label>
-                <select
-                  id="composer-template"
-                  className="select"
-                  value={composerTemplateId}
-                  onChange={(event) => setComposerTemplateId(event.target.value)}
-                >
-                  <option value="">不使用模板</option>
-                  {templates.map((template) => (
-                    <option key={template.id} value={template.id}>
-                      {template.icon} {template.name}
-                    </option>
-                  ))}
-                </select>
-                {templates.length === 0 && (
-                  <div className="field-help">
-                    还没有模板？<Link to="/templates">去创建或导入一个</Link>（不用模板也可以直接记录）
-                  </div>
-                )}
-              </div>
-
-              {composerTemplate !== undefined && (
-                <FieldForm
-                  fields={composerTemplate.fields}
-                  values={draft}
-                  errors={fieldErrors}
-                  idPrefix="composer"
-                  onChange={(key, value) => {
-                    setDraft((previous) => ({ ...previous, [key]: value }));
-                    setFieldErrors((previous) => {
-                      if (previous[key] === undefined) return previous;
-                      const next = { ...previous };
-                      delete next[key];
-                      return next;
-                    });
-                  }}
-                />
-              )}
-            </div>
-
-            {formError !== '' && (
-              <div className="error-box mt-12" role="alert">
-                <span>{formError}</span>
-              </div>
-            )}
-
-            <div className="composer-foot">
-              <button
-                type="button"
-                className="btn btn-primary"
-                disabled={submitting || !canSubmit}
-                onClick={() => void onSubmit()}
-              >
-                {submitting ? '保存中…' : '记录'}
-              </button>
-              <span className="kbd-hint">Ctrl / Cmd + Enter</span>
-              <span className="spacer" />
-              {!canSubmit && trimmedHint(content, composerTemplate !== undefined, draft)}
-            </div>
-          </section>
-
-          <div className="card mt-16">
-            <div className="card-title">
-              <span>筛选</span>
-              {hasActiveFilters(filters) && (
-                <button type="button" className="btn btn-sm btn-ghost" onClick={() => setFilters(emptyFilters())}>
-                  清除筛选
-                </button>
-              )}
-            </div>
-            <div className="filters">
-              <div>
-                <label className="label" htmlFor="filter-template">
-                  模板
-                </label>
-                <select
-                  id="filter-template"
-                  className="select"
-                  value={filters.templateId}
-                  onChange={(event) => patchFilters({ templateId: event.target.value })}
-                >
-                  <option value="">全部模板</option>
-                  <option value={NO_TEMPLATE_FILTER}>无模板</option>
-                  {templates.map((template) => (
-                    <option key={template.id} value={template.id}>
-                      {template.icon} {template.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="label" htmlFor="filter-tag">
-                  标签
-                </label>
-                <input
-                  id="filter-tag"
-                  className="input"
-                  value={filters.tag}
-                  placeholder="如 工作"
-                  onChange={(event) => patchFilters({ tag: event.target.value.replace(/^#/, '') })}
-                />
-              </div>
-              <div>
-                <label className="label" htmlFor="filter-from">
-                  开始日期
-                </label>
-                <input
-                  id="filter-from"
-                  className="input"
-                  type="date"
-                  value={filters.from}
-                  onChange={(event) => patchFilters({ from: event.target.value })}
-                />
-              </div>
-              <div>
-                <label className="label" htmlFor="filter-to">
-                  结束日期
-                </label>
-                <input
-                  id="filter-to"
-                  className="input"
-                  type="date"
-                  value={filters.to}
-                  onChange={(event) => patchFilters({ to: event.target.value })}
-                />
-              </div>
-              <div>
-                <label className="label" htmlFor="filter-q">
-                  关键字
-                </label>
-                <input
-                  id="filter-q"
-                  className="input"
-                  value={filters.q}
-                  placeholder="搜索内容"
-                  onChange={(event) => patchFilters({ q: event.target.value })}
-                />
-              </div>
-            </div>
+            <kbd className="search-kbd">Ctrl+K</kbd>
           </div>
+          <button
+            type="button"
+            className={activeBeyondTemplate ? 'icon-btn active' : 'icon-btn'}
+            aria-expanded={filtersOpen}
+            aria-label="更多筛选"
+            title="更多筛选"
+            onClick={() => setFiltersOpen((open) => !open)}
+          >
+            <Icon name="filter" size={16} />
+          </button>
+        </div>
+      </header>
 
-          <div className="row-between mt-16">
-            <span className="muted small">
-              共 {formatCount(total)} 条{hasActiveFilters(filters) ? '（已筛选）' : ''}
-            </span>
-            {listLoading && <span className="muted small">加载中…</span>}
-          </div>
-
-          {listError !== '' && <div className="mt-12"><ErrorBox message={listError} onRetry={() => void loadMemos('reset')} /></div>}
-
-          {listLoading ? (
-            <div className="memo-list">
-              <SkeletonList rows={3} />
-            </div>
-          ) : items.length === 0 && listError === '' ? (
-            <div className="card mt-12">
-              <EmptyState
-                icon="🗒️"
-                title={hasActiveFilters(filters) ? '没有符合条件的记录' : '还没有任何记录'}
-                hint={hasActiveFilters(filters) ? '试试清除筛选条件' : '在上面写下第一条想法吧'}
+      {filtersOpen && (
+        <div className="filter-panel">
+          <div className="filter-panel-grid">
+            <div>
+              <label className="label" htmlFor="filter-tag">
+                标签
+              </label>
+              <input
+                id="filter-tag"
+                className="input"
+                value={filters.tag}
+                placeholder="如 工作"
+                onChange={(event) => patchFilters({ tag: event.target.value.replace(/^#/, '') })}
               />
             </div>
-          ) : (
-            <>
-              <div className="memo-list">
-                {items.map((memo) => (
-                  <MemoCard
-                    key={memo.id}
-                    memo={memo}
-                    template={templates.find((template) => template.id === memo.templateId)}
-                    onEdit={setEditing}
-                    onDelete={(target) => void onDelete(target)}
-                    onTagClick={(tag) => patchFilters({ tag })}
-                    onTemplateClick={(templateId) => patchFilters({ templateId })}
-                  />
-                ))}
-              </div>
-              {cursorRef.current !== null && (
-                <div className="center mt-16">
-                  <button type="button" className="btn" disabled={loadingMore} onClick={() => void loadMemos('more')}>
-                    {loadingMore ? '加载中…' : '加载更多'}
-                  </button>
-                </div>
-              )}
-            </>
-          )}
-        </div>
-
-        <aside>
-          <div className="card">
-            <div className="card-title">
-              <span>概览</span>
-              <button type="button" className="btn btn-sm btn-ghost" onClick={() => void loadSummary()}>
-                刷新
+            <div>
+              <label className="label" htmlFor="filter-from">
+                开始日期
+              </label>
+              <input
+                id="filter-from"
+                className="input"
+                type="date"
+                value={filters.from}
+                onChange={(event) => patchFilters({ from: event.target.value })}
+              />
+            </div>
+            <div>
+              <label className="label" htmlFor="filter-to">
+                结束日期
+              </label>
+              <input
+                id="filter-to"
+                className="input"
+                type="date"
+                value={filters.to}
+                onChange={(event) => patchFilters({ to: event.target.value })}
+              />
+            </div>
+          </div>
+          {hasActiveFilters(filters) && (
+            <div className="filter-panel-foot">
+              <button type="button" className="btn btn-sm btn-ghost" onClick={clearFilters}>
+                清除全部筛选
               </button>
             </div>
-            {summaryError !== '' && <ErrorBox message={summaryError} onRetry={() => void loadSummary()} />}
-            {summary === null && summaryError === '' && <Loading />}
-            {summary !== null && (
-              <>
-                <div className="kpi-grid mb-16">
-                  <Kpi label="总想法数" value={formatCount(summary.total)} />
-                  <Kpi label="活跃天数" value={formatCount(summary.activeDays)} />
-                  <Kpi
-                    label="当前连续"
-                    value={`${formatCount(summary.currentStreak)} 天`}
-                    sub={`最长 ${formatCount(summary.longestStreak)} 天`}
-                  />
-                  <Kpi label="最近记录" value={summary.lastMemoAt === null ? '—' : summary.lastMemoAt.slice(0, 10)} />
-                </div>
+          )}
+        </div>
+      )}
 
-                <Heatmap days={summary.heatmap} weeks={12} onSelectDay={jumpToDay} />
+      <section className="composer">
+        <label className="sr-only" htmlFor="composer-content">
+          记录内容
+        </label>
+        <textarea
+          id="composer-content"
+          ref={textareaRef}
+          className="textarea composer-input"
+          autoFocus
+          placeholder="现在的想法是…"
+          value={content}
+          onChange={(event) => setContent(event.target.value)}
+          onKeyDown={onComposerKeyDown}
+        />
 
-                {summary.byTemplate.length > 0 && (
-                  <div className="mt-16">
-                    <div className="label">按模板分布</div>
-                    <div className="stack-sm">
-                      {summary.byTemplate.map((row) => (
-                        <div className="row-between" key={row.templateId ?? 'none'}>
-                          <span className="truncate">{row.templateName}</span>
-                          <span className="muted small">
-                            {formatCount(row.count)} 条
-                            {summary.total > 0 ? ` · ${formatRatio(row.count / summary.total)}` : ''}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {summary.firstMemoAt !== null && (
-                  <p className="muted small mt-16">第一条记录于 {summary.firstMemoAt.slice(0, 10)}</p>
-                )}
-              </>
-            )}
+        {composerTemplate !== undefined && (
+          <div className="composer-fields">
+            <FieldForm
+              fields={composerTemplate.fields}
+              values={draft}
+              errors={fieldErrors}
+              idPrefix="composer"
+              onChange={(key, value) => {
+                setDraft((previous) => ({ ...previous, [key]: value }));
+                setFieldErrors((previous) => {
+                  if (previous[key] === undefined) return previous;
+                  const next = { ...previous };
+                  delete next[key];
+                  return next;
+                });
+              }}
+            />
           </div>
-        </aside>
+        )}
+
+        {formError !== '' && (
+          <div className="error-box mt-12" role="alert">
+            <span>{formError}</span>
+          </div>
+        )}
+
+        <div className="composer-foot">
+          <div className="composer-template">
+            <Icon name="grid" size={15} />
+            <label className="sr-only" htmlFor="composer-template">
+              模板
+            </label>
+            <select
+              id="composer-template"
+              className="composer-template-select"
+              value={composerTemplateId}
+              onChange={(event) => setComposerTemplateId(event.target.value)}
+            >
+              <option value="">不使用模板</option>
+              {templates.map((template) => (
+                <option key={template.id} value={template.id}>
+                  {template.icon} {template.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="composer-tags">
+            <Icon name="hash" size={15} />
+            <span className="composer-tag-hint">#标签</span>
+          </div>
+
+          <span className="spacer" />
+          {!canSubmit && trimmedHint(content, composerTemplate !== undefined, draft)}
+          <button
+            type="button"
+            className="send-btn"
+            disabled={submitting || !canSubmit}
+            onClick={() => void onSubmit()}
+            aria-label={submitting ? '保存中' : '记录'}
+            title="记录（Ctrl / Cmd + Enter）"
+          >
+            <Icon name="send" size={17} />
+          </button>
+        </div>
+      </section>
+
+      {templates.length === 0 && (
+        <p className="memo-hint">
+          还没有模板？<Link to="/templates">去创建或导入一个</Link>（不用模板也可以直接记录）
+        </p>
+      )}
+
+      <div className="list-meta">
+        <span className="muted small">
+          {templateLabel} · 共 {formatCount(total)} 条
+          {hasActiveFilters(filters) ? '（已筛选）' : ''}
+        </span>
+        {listLoading && <span className="muted small">加载中…</span>}
+        {hasActiveFilters(filters) && (
+          <button type="button" className="link-btn small" onClick={clearFilters}>
+            清除筛选
+          </button>
+        )}
       </div>
+
+      {listError !== '' && (
+        <div className="mt-12">
+          <ErrorBox message={listError} onRetry={() => void loadMemos('reset')} />
+        </div>
+      )}
+
+      {listLoading ? (
+        <div className="memo-list">
+          <SkeletonList rows={3} />
+        </div>
+      ) : items.length === 0 && listError === '' ? (
+        <div className="card mt-12">
+          <EmptyState
+            icon="🗒️"
+            title={hasActiveFilters(filters) ? '没有符合条件的记录' : '还没有任何记录'}
+            hint={hasActiveFilters(filters) ? '试试清除筛选条件' : '在上面写下第一条想法吧'}
+          />
+        </div>
+      ) : (
+        <>
+          <div className="memo-list">
+            {items.map((memo) => (
+              <MemoCard
+                key={memo.id}
+                memo={memo}
+                template={templates.find((template) => template.id === memo.templateId)}
+                onEdit={setEditing}
+                onDelete={(target) => void onDelete(target)}
+                onTagClick={(tag) => patchFilters({ tag })}
+                onTemplateClick={(templateId) => patchFilters({ templateId })}
+              />
+            ))}
+          </div>
+          {cursorRef.current !== null && (
+            <div className="center mt-16">
+              <button type="button" className="btn" disabled={loadingMore} onClick={() => void loadMemos('more')}>
+                {loadingMore ? '加载中…' : '加载更多'}
+              </button>
+            </div>
+          )}
+        </>
+      )}
 
       {editing !== null && (
         <MemoEditModal
@@ -491,7 +511,7 @@ export default function MemoPage(): JSX.Element {
           onSaved={() => {
             cursorRef.current = null;
             void loadMemos('reset');
-            void loadSummary();
+            void overview.reload();
           }}
         />
       )}

@@ -2,6 +2,7 @@ import React from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 import App from './App';
+import { OverviewProvider } from './state/overview';
 import { SessionProvider } from './state/session';
 import { ToastProvider } from './state/toast';
 import './styles.css';
@@ -16,7 +17,9 @@ createRoot(container).render(
     <BrowserRouter>
       <SessionProvider>
         <ToastProvider>
-          <App />
+          <OverviewProvider>
+            <App />
+          </OverviewProvider>
         </ToastProvider>
       </SessionProvider>
     </BrowserRouter>

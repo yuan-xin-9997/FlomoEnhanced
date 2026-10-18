@@ -82,7 +82,7 @@ export default function SettingsPage(): JSX.Element {
           <h1 className="page-title">设置</h1>
           <p className="page-sub">账号信息、数据统计与安全设置</p>
         </div>
-        <button type="button" className="btn btn-danger" onClick={() => void onLogout()}>
+        <button type="button" className="btn btn-sm btn-danger" onClick={() => void onLogout()}>
           退出登录
         </button>
       </div>

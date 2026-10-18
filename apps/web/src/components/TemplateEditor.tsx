@@ -189,13 +189,13 @@ export default function TemplateEditor({ template, onClose, onSaved }: TemplateE
                     id="tpl-color"
                     className="swatch"
                     type="color"
-                    value={/^#[0-9a-fA-F]{6}$/.test(draft.color) ? draft.color : '#3b82f6'}
+                    value={/^#[0-9a-fA-F]{6}$/.test(draft.color) ? draft.color : '#30cf79'}
                     onChange={(event) => patchDraft({ color: event.target.value })}
                   />
                   <input
                     className="input"
                     value={draft.color}
-                    placeholder="#3b82f6"
+                    placeholder="#30cf79"
                     onChange={(event) => patchDraft({ color: event.target.value })}
                   />
                 </div>
@@ -511,7 +511,7 @@ export default function TemplateEditor({ template, onClose, onSaved }: TemplateE
                                 value={
                                   option.color !== undefined && /^#[0-9a-fA-F]{6}$/.test(option.color)
                                     ? option.color
-                                    : '#cbd5e1'
+                                    : '#e0e0e0'
                                 }
                                 onChange={(event) =>
                                   setFields(patchOption(draft.fields, index, optionIndex, { color: event.target.value }))

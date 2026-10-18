@@ -25,9 +25,9 @@ import type {
 import { formatNumber } from './format';
 
 /** 通用配色（与 flomo 极简气质一致的冷色系） */
-const PALETTE = ['#3b82f6', '#60a5fa', '#93c5fd', '#14b8a6', '#f59e0b', '#a78bfa', '#f472b6', '#34d399'];
+const PALETTE = ['#30cf79', '#5ad39a', '#8fe0b4', '#c9f0dd', '#4dc9c0', '#5aa9f0', '#f2b84b', '#9b8cf9'];
 
-const AXIS_LABEL = { fontSize: 10, color: '#948b80' } as const;
+const AXIS_LABEL = { fontSize: 10, color: '#8f959e' } as const;
 
 function baseGrid(hasLegend: boolean): {
   left: number;
@@ -51,7 +51,7 @@ function emptyOption(text = '该区间内暂无数据'): EChartsOption {
       text,
       left: 'center',
       top: 'middle',
-      textStyle: { color: '#948b80', fontSize: 13, fontWeight: 400 },
+      textStyle: { color: '#8f959e', fontSize: 13, fontWeight: 400 },
     },
   };
 }
@@ -91,7 +91,7 @@ export function buildTimelineOption(timeline: Timeline | null | undefined, subti
       top: 0,
       itemWidth: 12,
       itemHeight: 8,
-      textStyle: { fontSize: 11, color: '#57504a' },
+      textStyle: { fontSize: 11, color: '#4e5969' },
     },
     grid: baseGrid(true),
     xAxis: {
@@ -99,10 +99,10 @@ export function buildTimelineOption(timeline: Timeline | null | undefined, subti
       data: pointLabels(points),
       axisLabel: { ...AXIS_LABEL, hideOverlap: true },
       axisTick: { show: false },
-      axisLine: { lineStyle: { color: '#e7e2da' } },
+      axisLine: { lineStyle: { color: '#e5e5e5' } },
     },
     yAxis: [
-      { type: 'value', name: subtitle ?? '', nameTextStyle: { fontSize: 10, color: '#948b80' }, axisLabel: AXIS_LABEL, splitLine: { lineStyle: { color: '#f1efe9' } } },
+      { type: 'value', name: subtitle ?? '', nameTextStyle: { fontSize: 10, color: '#8f959e' }, axisLabel: AXIS_LABEL, splitLine: { lineStyle: { color: '#f4f4f4' } } },
       { type: 'value', name: '', axisLabel: AXIS_LABEL, splitLine: { show: false } },
     ],
     series: [
@@ -111,7 +111,7 @@ export function buildTimelineOption(timeline: Timeline | null | undefined, subti
         type: 'bar',
         data: points.map((point) => point.count),
         barMaxWidth: 16,
-        itemStyle: { color: '#93c5fd', borderRadius: [3, 3, 0, 0] },
+        itemStyle: { color: '#a8e6c3', borderRadius: [3, 3, 0, 0] },
       },
       {
         name: '字数',
@@ -120,7 +120,7 @@ export function buildTimelineOption(timeline: Timeline | null | undefined, subti
         smooth: true,
         symbolSize: 4,
         data: points.map((point) => point.chars),
-        itemStyle: { color: '#2563eb' },
+        itemStyle: { color: '#26b769' },
         lineStyle: { width: 2 },
       },
     ],
@@ -153,7 +153,7 @@ export function buildCalendarHeatmapOption(
       max: visual.max,
       type: 'piecewise',
       splitNumber: 5,
-      inRange: { color: ['#ece7df', '#c6e3cf', '#86c99c', '#43a86a', '#1f7a45'] },
+      inRange: { color: ['#ededed', '#c9f0dd', '#8fe0b4', '#4fcf8b', '#30cf79'] },
     },
     calendar: {
       range: [start, end],
@@ -161,11 +161,11 @@ export function buildCalendarHeatmapOption(
       right: 12,
       top: 22,
       cellSize: ['auto', 14],
-      itemStyle: { borderWidth: 2, borderColor: '#fff', color: '#ece7df' },
+      itemStyle: { borderWidth: 2, borderColor: '#fff', color: '#ededed' },
       splitLine: { show: false },
       yearLabel: { show: false },
-      monthLabel: { fontSize: 10, color: '#948b80', nameMap: 'zh' },
-      dayLabel: { fontSize: 10, color: '#948b80', firstDay: 1, nameMap: ['日', '一', '二', '三', '四', '五', '六'] },
+      monthLabel: { fontSize: 10, color: '#8f959e', nameMap: 'zh' },
+      dayLabel: { fontSize: 10, color: '#8f959e', firstDay: 1, nameMap: ['日', '一', '二', '三', '四', '五', '六'] },
     },
     series: [
       {
@@ -190,15 +190,15 @@ export function buildWeekdayOption(weekday: Weekday | null | undefined): ECharts
       data: buckets.map((bucket) => bucket.label !== '' ? bucket.label : `周${bucket.weekday}`),
       axisLabel: AXIS_LABEL,
       axisTick: { show: false },
-      axisLine: { lineStyle: { color: '#e7e2da' } },
+      axisLine: { lineStyle: { color: '#e5e5e5' } },
     },
-    yAxis: { type: 'value', axisLabel: AXIS_LABEL, splitLine: { lineStyle: { color: '#f1efe9' } } },
+    yAxis: { type: 'value', axisLabel: AXIS_LABEL, splitLine: { lineStyle: { color: '#f4f4f4' } } },
     series: [
       {
         type: 'bar',
         data: buckets.map((bucket) => bucket.count),
         barMaxWidth: 22,
-        itemStyle: { color: '#60a5fa', borderRadius: [3, 3, 0, 0] },
+        itemStyle: { color: '#5ad39a', borderRadius: [3, 3, 0, 0] },
       },
     ],
   };
@@ -215,15 +215,15 @@ export function buildHourOption(hourOfDay: HourOfDay | null | undefined): EChart
       data: buckets.map((bucket) => String(bucket.hour).padStart(2, '0')),
       axisLabel: { ...AXIS_LABEL, interval: 1 },
       axisTick: { show: false },
-      axisLine: { lineStyle: { color: '#e7e2da' } },
+      axisLine: { lineStyle: { color: '#e5e5e5' } },
     },
-    yAxis: { type: 'value', axisLabel: AXIS_LABEL, splitLine: { lineStyle: { color: '#f1efe9' } } },
+    yAxis: { type: 'value', axisLabel: AXIS_LABEL, splitLine: { lineStyle: { color: '#f4f4f4' } } },
     series: [
       {
         type: 'bar',
         data: buckets.map((bucket) => bucket.count),
         barMaxWidth: 14,
-        itemStyle: { color: '#a78bfa', borderRadius: [3, 3, 0, 0] },
+        itemStyle: { color: '#9b8cf9', borderRadius: [3, 3, 0, 0] },
       },
     ],
   };
@@ -243,21 +243,21 @@ export function buildRankedBarOption(
   return {
     tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
     grid: { left: 8, right: 24, top: 10, bottom: 6, containLabel: true },
-    xAxis: { type: 'value', axisLabel: AXIS_LABEL, splitLine: { lineStyle: { color: '#f1efe9' } } },
+    xAxis: { type: 'value', axisLabel: AXIS_LABEL, splitLine: { lineStyle: { color: '#f4f4f4' } } },
     yAxis: {
       type: 'category',
       data: ordered.map((item) => item.name),
-      axisLabel: { fontSize: 11, color: '#57504a' },
+      axisLabel: { fontSize: 11, color: '#4e5969' },
       axisTick: { show: false },
-      axisLine: { lineStyle: { color: '#e7e2da' } },
+      axisLine: { lineStyle: { color: '#e5e5e5' } },
     },
     series: [
       {
         type: 'bar',
         data: ordered.map((item) => item.value),
         barMaxWidth: 14,
-        itemStyle: { color: options.color ?? '#60a5fa', borderRadius: [0, 3, 3, 0] },
-        label: { show: true, position: 'right', fontSize: 10, color: '#948b80' },
+        itemStyle: { color: options.color ?? '#5ad39a', borderRadius: [0, 3, 3, 0] },
+        label: { show: true, position: 'right', fontSize: 10, color: '#8f959e' },
       },
     ],
   };
@@ -266,14 +266,14 @@ export function buildRankedBarOption(
 export function buildTagsOption(tags: readonly TagStat[] | null | undefined, limit = 20): EChartsOption {
   return buildRankedBarOption(
     (tags ?? []).map((item) => ({ name: item.tag, value: item.count })),
-    { limit, color: '#34d399' },
+    { limit, color: '#30cf79' },
   );
 }
 
 export function buildUrlDomainsOption(url: UrlStats | null | undefined): EChartsOption {
   return buildRankedBarOption(
     (url?.distinctDomains ?? []).map((item) => ({ name: item.domain, value: item.count })),
-    { limit: 15, color: '#f59e0b' },
+    { limit: 15, color: '#f2b84b' },
   );
 }
 
@@ -294,15 +294,15 @@ export function buildNumericHistogramOption(
       data: bins.map((bin) => binLabel(bin.from, bin.to, precision)),
       axisLabel: { ...AXIS_LABEL, rotate: bins.length > 8 ? 30 : 0, hideOverlap: true },
       axisTick: { show: false },
-      axisLine: { lineStyle: { color: '#e7e2da' } },
+      axisLine: { lineStyle: { color: '#e5e5e5' } },
     },
-    yAxis: { type: 'value', axisLabel: AXIS_LABEL, splitLine: { lineStyle: { color: '#f1efe9' } } },
+    yAxis: { type: 'value', axisLabel: AXIS_LABEL, splitLine: { lineStyle: { color: '#f4f4f4' } } },
     series: [
       {
         type: 'bar',
         data: bins.map((bin) => bin.count),
         barMaxWidth: 26,
-        itemStyle: { color: '#93c5fd', borderRadius: [3, 3, 0, 0] },
+        itemStyle: { color: '#a8e6c3', borderRadius: [3, 3, 0, 0] },
       },
     ],
   };
@@ -322,7 +322,7 @@ export function buildNumericTrendOption(
       top: 0,
       itemWidth: 12,
       itemHeight: 8,
-      textStyle: { fontSize: 11, color: '#57504a' },
+      textStyle: { fontSize: 11, color: '#4e5969' },
     },
     grid: baseGrid(true),
     xAxis: {
@@ -330,10 +330,10 @@ export function buildNumericTrendOption(
       data: pointLabels(points),
       axisLabel: { ...AXIS_LABEL, hideOverlap: true },
       axisTick: { show: false },
-      axisLine: { lineStyle: { color: '#e7e2da' } },
+      axisLine: { lineStyle: { color: '#e5e5e5' } },
     },
     yAxis: [
-      { type: 'value', axisLabel: AXIS_LABEL, splitLine: { lineStyle: { color: '#f1efe9' } } },
+      { type: 'value', axisLabel: AXIS_LABEL, splitLine: { lineStyle: { color: '#f4f4f4' } } },
       { type: 'value', axisLabel: AXIS_LABEL, splitLine: { show: false } },
     ],
     series: [
@@ -342,7 +342,7 @@ export function buildNumericTrendOption(
         type: 'bar',
         data: points.map((point) => point.count),
         barMaxWidth: 16,
-        itemStyle: { color: '#e0e9f8', borderRadius: [3, 3, 0, 0] },
+        itemStyle: { color: '#e2f6ea', borderRadius: [3, 3, 0, 0] },
       },
       {
         name: '均值',
@@ -352,7 +352,7 @@ export function buildNumericTrendOption(
         symbolSize: 4,
         connectNulls: true,
         data: points.map((point) => Math.round(point.mean * 100) / 100),
-        itemStyle: { color: '#2563eb' },
+        itemStyle: { color: '#26b769' },
         lineStyle: { width: 2 },
       },
     ],
@@ -418,7 +418,7 @@ export function buildDistributionOption(points: readonly DistributionPoint[], ti
   if (effective.length <= 8) {
     return {
       tooltip: { trigger: 'item', formatter: '{b}: {c}（{d}%）' },
-      legend: { bottom: 0, type: 'scroll', textStyle: { fontSize: 11, color: '#57504a' }, itemWidth: 10, itemHeight: 8 },
+      legend: { bottom: 0, type: 'scroll', textStyle: { fontSize: 11, color: '#4e5969' }, itemWidth: 10, itemHeight: 8 },
       color: PALETTE,
       series: [
         {
@@ -428,7 +428,7 @@ export function buildDistributionOption(points: readonly DistributionPoint[], ti
           center: ['50%', '44%'],
           avoidLabelOverlap: true,
           data: points.map((point) => ({ name: point.label, value: point.count })),
-          label: { fontSize: 11, color: '#57504a', formatter: '{b}' },
+          label: { fontSize: 11, color: '#4e5969', formatter: '{b}' },
           labelLine: { length: 6, length2: 6 },
         },
       ],
@@ -436,7 +436,7 @@ export function buildDistributionOption(points: readonly DistributionPoint[], ti
   }
   return buildRankedBarOption(
     points.map((point) => ({ name: `${point.label}（${point.count}）`, value: point.count })),
-    { limit: 20, color: '#60a5fa' },
+    { limit: 20, color: '#5ad39a' },
   );
 }
 
@@ -462,15 +462,15 @@ export function buildRatingOption(
       data: values.map((value) => (value === 0 ? '未评分' : `${value} 分`)),
       axisLabel: AXIS_LABEL,
       axisTick: { show: false },
-      axisLine: { lineStyle: { color: '#e7e2da' } },
+      axisLine: { lineStyle: { color: '#e5e5e5' } },
     },
-    yAxis: { type: 'value', axisLabel: AXIS_LABEL, splitLine: { lineStyle: { color: '#f1efe9' } } },
+    yAxis: { type: 'value', axisLabel: AXIS_LABEL, splitLine: { lineStyle: { color: '#f4f4f4' } } },
     series: [
       {
         type: 'bar',
         data,
         barMaxWidth: 26,
-        itemStyle: { color: '#f59e0b', borderRadius: [3, 3, 0, 0] },
+        itemStyle: { color: '#f2b84b', borderRadius: [3, 3, 0, 0] },
       },
     ],
   };
@@ -484,8 +484,8 @@ export function buildBooleanOption(stats: FieldInsight['boolean']): EChartsOptio
   if (total === 0) return emptyOption();
   return {
     tooltip: { trigger: 'item', formatter: '{b}: {c}（{d}%）' },
-    legend: { bottom: 0, textStyle: { fontSize: 11, color: '#57504a' }, itemWidth: 10, itemHeight: 8 },
-    color: ['#3b82f6', '#e2e0da'],
+    legend: { bottom: 0, textStyle: { fontSize: 11, color: '#4e5969' }, itemWidth: 10, itemHeight: 8 },
+    color: ['#30cf79', '#e6e6e6'],
     series: [
       {
         type: 'pie',
@@ -495,7 +495,7 @@ export function buildBooleanOption(stats: FieldInsight['boolean']): EChartsOptio
           { name: '是', value: stats.trueCount },
           { name: '否', value: stats.falseCount },
         ],
-        label: { fontSize: 11, color: '#57504a', formatter: '{b} {d}%' },
+        label: { fontSize: 11, color: '#4e5969', formatter: '{b} {d}%' },
         labelLine: { length: 6, length2: 6 },
       },
     ],
@@ -515,15 +515,15 @@ export function buildDateBucketsOption(dateStats: DateStats | null | undefined):
       data: buckets.map((bucket) => bucket.bucket),
       axisLabel: { ...AXIS_LABEL, hideOverlap: true },
       axisTick: { show: false },
-      axisLine: { lineStyle: { color: '#e7e2da' } },
+      axisLine: { lineStyle: { color: '#e5e5e5' } },
     },
-    yAxis: { type: 'value', axisLabel: AXIS_LABEL, splitLine: { lineStyle: { color: '#f1efe9' } } },
+    yAxis: { type: 'value', axisLabel: AXIS_LABEL, splitLine: { lineStyle: { color: '#f4f4f4' } } },
     series: [
       {
         type: 'bar',
         data: buckets.map((bucket) => bucket.count),
         barMaxWidth: 26,
-        itemStyle: { color: '#93c5fd', borderRadius: [3, 3, 0, 0] },
+        itemStyle: { color: '#a8e6c3', borderRadius: [3, 3, 0, 0] },
       },
     ],
   };
@@ -541,11 +541,11 @@ export function buildDateWeekdayOption(dateStats: DateStats | null | undefined):
       data: buckets.map((bucket) => `周${names[bucket.weekday - 1] ?? bucket.weekday}`),
       axisLabel: AXIS_LABEL,
       axisTick: { show: false },
-      axisLine: { lineStyle: { color: '#e7e2da' } },
+      axisLine: { lineStyle: { color: '#e5e5e5' } },
     },
-    yAxis: { type: 'value', axisLabel: AXIS_LABEL, splitLine: { lineStyle: { color: '#f1efe9' } } },
+    yAxis: { type: 'value', axisLabel: AXIS_LABEL, splitLine: { lineStyle: { color: '#f4f4f4' } } },
     series: [
-      { type: 'bar', data: buckets.map((bucket) => bucket.count), barMaxWidth: 22, itemStyle: { color: '#14b8a6', borderRadius: [3, 3, 0, 0] } },
+      { type: 'bar', data: buckets.map((bucket) => bucket.count), barMaxWidth: 22, itemStyle: { color: '#4dc9c0', borderRadius: [3, 3, 0, 0] } },
     ],
   };
 }
@@ -561,11 +561,11 @@ export function buildDateHourOption(dateStats: DateStats | null | undefined): EC
       data: buckets.map((bucket) => String(bucket.hour).padStart(2, '0')),
       axisLabel: { ...AXIS_LABEL, interval: 1 },
       axisTick: { show: false },
-      axisLine: { lineStyle: { color: '#e7e2da' } },
+      axisLine: { lineStyle: { color: '#e5e5e5' } },
     },
-    yAxis: { type: 'value', axisLabel: AXIS_LABEL, splitLine: { lineStyle: { color: '#f1efe9' } } },
+    yAxis: { type: 'value', axisLabel: AXIS_LABEL, splitLine: { lineStyle: { color: '#f4f4f4' } } },
     series: [
-      { type: 'bar', data: buckets.map((bucket) => bucket.count), barMaxWidth: 12, itemStyle: { color: '#a78bfa', borderRadius: [3, 3, 0, 0] } },
+      { type: 'bar', data: buckets.map((bucket) => bucket.count), barMaxWidth: 12, itemStyle: { color: '#9b8cf9', borderRadius: [3, 3, 0, 0] } },
     ],
   };
 }
@@ -583,11 +583,11 @@ export function buildTextHistogramOption(text: TextStats | null | undefined): EC
       data: bins.map((bin) => binLabel(bin.from, bin.to, 0)),
       axisLabel: { ...AXIS_LABEL, hideOverlap: true },
       axisTick: { show: false },
-      axisLine: { lineStyle: { color: '#e7e2da' } },
+      axisLine: { lineStyle: { color: '#e5e5e5' } },
     },
-    yAxis: { type: 'value', axisLabel: AXIS_LABEL, splitLine: { lineStyle: { color: '#f1efe9' } } },
+    yAxis: { type: 'value', axisLabel: AXIS_LABEL, splitLine: { lineStyle: { color: '#f4f4f4' } } },
     series: [
-      { type: 'bar', data: bins.map((bin) => bin.count), barMaxWidth: 26, itemStyle: { color: '#34d399', borderRadius: [3, 3, 0, 0] } },
+      { type: 'bar', data: bins.map((bin) => bin.count), barMaxWidth: 26, itemStyle: { color: '#30cf79', borderRadius: [3, 3, 0, 0] } },
     ],
   };
 }
@@ -621,7 +621,7 @@ export function buildOverviewShareOption(byTemplate: readonly OverviewTemplateSh
   if (list.length === 0) return emptyOption();
   return {
     tooltip: { trigger: 'item', formatter: '{b}: {c}（{d}%）' },
-    legend: { bottom: 0, type: 'scroll', textStyle: { fontSize: 11, color: '#57504a' }, itemWidth: 10, itemHeight: 8 },
+    legend: { bottom: 0, type: 'scroll', textStyle: { fontSize: 11, color: '#4e5969' }, itemWidth: 10, itemHeight: 8 },
     color: PALETTE,
     series: [
       {
@@ -632,7 +632,7 @@ export function buildOverviewShareOption(byTemplate: readonly OverviewTemplateSh
           name: `${item.icon !== '' ? `${item.icon} ` : ''}${item.templateName}`,
           value: item.count,
         })),
-        label: { fontSize: 11, color: '#57504a', formatter: '{b}' },
+        label: { fontSize: 11, color: '#4e5969', formatter: '{b}' },
         labelLine: { length: 6, length2: 6 },
       },
     ],

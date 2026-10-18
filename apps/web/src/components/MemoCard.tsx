@@ -33,12 +33,14 @@ export default function MemoCard({
         <time dateTime={memo.createdAt} title={formatDateTime(memo.createdAt)}>
           {formatDateTime(memo.createdAt)}
         </time>
-        <span aria-hidden="true">·</span>
-        <span>{formatRelativeTime(memo.createdAt)}</span>
+        <span className="memo-sep" aria-hidden="true">
+          ·
+        </span>
+        <span className="memo-rel">{formatRelativeTime(memo.createdAt)}</span>
         {templateName !== null && templateName !== undefined && templateName !== '' && (
           <button
             type="button"
-            className="badge badge-accent tag-pill"
+            className="memo-template"
             onClick={() => {
               if (memo.templateId !== null && onTemplateClick !== undefined) onTemplateClick(memo.templateId);
             }}
@@ -47,6 +49,21 @@ export default function MemoCard({
             <span aria-hidden="true">{template?.icon ?? '📄'}</span>
             {templateName}
           </button>
+        )}
+        <span className="spacer" />
+        {(onEdit !== undefined || onDelete !== undefined) && (
+          <div className="memo-actions">
+            {onEdit !== undefined && (
+              <button type="button" className="memo-action" onClick={() => onEdit(memo)}>
+                编辑
+              </button>
+            )}
+            {onDelete !== undefined && (
+              <button type="button" className="memo-action danger" onClick={() => onDelete(memo)}>
+                删除
+              </button>
+            )}
+          </div>
         )}
       </header>
 
@@ -80,21 +97,6 @@ export default function MemoCard({
               #{tag}
             </button>
           ))}
-        </div>
-      )}
-
-      {(onEdit !== undefined || onDelete !== undefined) && (
-        <div className="memo-actions">
-          {onEdit !== undefined && (
-            <button type="button" className="btn btn-sm" onClick={() => onEdit(memo)}>
-              编辑
-            </button>
-          )}
-          {onDelete !== undefined && (
-            <button type="button" className="btn btn-sm btn-danger" onClick={() => onDelete(memo)}>
-              删除
-            </button>
-          )}
         </div>
       )}
     </article>

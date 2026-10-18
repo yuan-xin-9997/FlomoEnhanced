@@ -52,7 +52,8 @@ export default function LoginPage(): JSX.Element {
     <div className="auth-wrap">
       <div className="auth-card">
         <div className="auth-brand">
-          <h1 className="auth-title">🖋️ 浮墨增强版</h1>
+          <img className="auth-logo" src="/favicon.png" alt="" width={44} height={44} />
+          <h1 className="auth-title">浮墨增强版</h1>
           <p className="auth-sub">模板记录 · 洞察分析</p>
         </div>
 

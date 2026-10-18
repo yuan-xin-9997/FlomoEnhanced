@@ -50,6 +50,7 @@ export default function RegisterPage(): JSX.Element {
     <div className="auth-wrap">
       <div className="auth-card">
         <div className="auth-brand">
+          <img className="auth-logo" src="/favicon.png" alt="" width={44} height={44} />
           <h1 className="auth-title">创建账号</h1>
           <p className="auth-sub">你的想法与模板只对你可见</p>
         </div>
