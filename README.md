@@ -63,6 +63,7 @@ FlomoEnhanced/
 ├── apps/api/                          # Fastify 后端（src/index.ts 为入口，构建到 dist/）
 ├── apps/api/test/                     # 后端测试（node:test）
 └── apps/web/                          # React + Vite 前端（构建到 dist/）
+    └── public/                        # 静态资源（favicon.ico / favicon.png / apple-touch-icon.png，沿用 flomo 官方 logo）
 ```
 
 ## 本地开发与测试
