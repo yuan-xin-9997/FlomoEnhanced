@@ -227,6 +227,38 @@ final class AcceptanceUITests: XCTestCase {
         attach("07-模板编辑器")
     }
 
+    /// 模板页：导入弹窗 + 导出分享面板
+    func test08TemplateImportExport() {
+        let app = start(signedIn: true, tab: templatesTab)
+        XCTAssertTrue(waitFor(app.navigationBars["模板"], timeout: 60), "模板页未出现")
+        Thread.sleep(forTimeInterval: 3.0)
+
+        // 导入模板（.fileImporter 选择文件前的弹窗）
+        let importButton = app.buttons["导入模板"]
+        XCTAssertTrue(waitFor(importButton, timeout: 10), "未找到「导入模板」按钮")
+        importButton.tap()
+        Thread.sleep(forTimeInterval: 2.5)
+        attach("14-模板导入")
+
+        // 关闭导入弹窗（按钮文案是「关闭」）
+        if app.buttons["关闭"].exists {
+            app.buttons["关闭"].tap()
+        } else if app.buttons["取消"].exists {
+            app.buttons["取消"].tap()
+        } else {
+            app.swipeDown()
+        }
+        XCTAssertTrue(waitFor(app.staticTexts["选择模板文件"], timeout: 5) == false, "导入弹窗未关闭")
+        Thread.sleep(forTimeInterval: 1.5)
+
+        // 导出模板（全部）→ 系统分享面板
+        let exportButton = app.buttons["导出模板"]
+        XCTAssertTrue(waitFor(exportButton, timeout: 10), "未找到「导出模板」按钮")
+        exportButton.tap()
+        Thread.sleep(forTimeInterval: 6.0)
+        attach("15-模板导出（分享面板）")
+    }
+
     /// 设置页：账号信息与健康检查
     func test05Settings() {
         let app = start(signedIn: true, tab: settingsTab)
@@ -272,8 +304,7 @@ final class AcceptanceUITests: XCTestCase {
     }
 
     /// 真实登录流程：在登录页输入用户名/密码并提交
-    func test07ManualLogin() {
-        let app = start(signedIn: false)
+    func test07ManualLogin() {        let app = start(signedIn: false)
         XCTAssertTrue(waitFor(app.textFields.firstMatch, timeout: 30), "登录页输入框未出现")
 
         let usernameField = app.textFields.element(boundBy: 0)

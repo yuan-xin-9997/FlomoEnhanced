@@ -596,8 +596,10 @@ ssh macbook-wifi "xcrun xcresulttool export attachments --path /tmp/flomo-uitest
 
 **验收标准（PM 逐项过）**：
 1. `xcodebuild build` 0 error（warning 可接受）。
-2. UI 验收测试（`FlomoEnhancedUITests`）全绿：登录页渲染 / 四 Tab 切换 / 新建记录弹窗 / 模板编辑器 / 设置页 / 洞察页（含选择模板与字段统计）。
-3. 截图逐屏留档（`.tmp-shots/`）。
+2. UI 验收测试（`FlomoEnhancedUITests`）全绿（8 用例 / 16 张截图）：登录页渲染 / 四 Tab 切换 /
+   新建记录弹窗 / 模板编辑器 / 模板导入弹窗 + 导出分享面板 / 设置页（含健康检查、改密、登出）/
+   洞察页（全局概览 + 选模板后模板洞察与字段统计）/ 真实手动登录。
+3. 截图逐屏留档（`.tmp-shots/`，经 `xcresulttool export attachments` 导出）。
 4. 真机安装说明（免费 Apple ID）见 `apps/ios/README.md`。
 
 ## 9. 已知边界 / 非目标
