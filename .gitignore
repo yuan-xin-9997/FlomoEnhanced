@@ -24,6 +24,9 @@ coverage/
 test-results/
 .vite/
 
+# iOS 验收截图（临时产物，可用 scripts\ios-build.ps1 -Test 重新生成）
+.tmp-shots/
+
 # 编辑器 / 系统
 .vscode/
 .idea/
