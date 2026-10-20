@@ -1330,12 +1330,13 @@ code {
   outline-offset: 1px;
 }
 
-.heatmap-cell.empty {
+/* 不要用全局 `.empty`（空态样式带大内边距），否则空格子会被撑高 */
+.heatmap-cell.is-empty {
   background: transparent;
   cursor: default;
 }
 
-.heatmap-cell.empty:hover {
+.heatmap-cell.is-empty:hover {
   outline: 0;
 }
 

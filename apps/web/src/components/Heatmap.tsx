@@ -61,7 +61,7 @@ export default function Heatmap({
                     }}
                   />
                 ) : (
-                  <span key={cell.date} className="heatmap-cell empty" />
+                  <span key={cell.date} className="heatmap-cell is-empty" />
                 ),
               )}
             </div>
