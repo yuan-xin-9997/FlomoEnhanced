@@ -161,6 +161,8 @@ export default function MemoPage(): JSX.Element {
 
   // 切换撰写区模板时重置字段草稿（保留模板选择方便连续记账）
   useEffect(() => {
+    // 选择模板后使用模板字段（或文本模式）作为唯一输入区，自由内容框隐藏，故清空内容
+    setContent('');
     const nextDraft = composerTemplate === undefined ? {} : emptyDraft(composerTemplate.fields);
     setDraft(nextDraft);
     setFieldErrors({});
@@ -337,7 +339,7 @@ export default function MemoPage(): JSX.Element {
     }
   };
 
-  const onComposerKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>): void => {
+  const onComposerKeyDown = (event: React.KeyboardEvent<HTMLElement>): void => {
     if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
       event.preventDefault();
       if (!submitting) void onSubmit();
@@ -447,23 +449,25 @@ export default function MemoPage(): JSX.Element {
         </div>
       )}
 
-      <section className="composer">
-        <label className="sr-only" htmlFor="composer-content">
-          记录内容
-        </label>
-        <textarea
-          id="composer-content"
-          ref={textareaRef}
-          className="textarea composer-input"
-          autoFocus
-          placeholder="现在的想法是…"
-          value={content}
-          onChange={(event) => setContent(event.target.value)}
-          onKeyDown={onComposerKeyDown}
-        />
-
-        {composerTemplate !== undefined && (
-          <div className="composer-fields">
+      <section className="composer" onKeyDown={onComposerKeyDown}>
+        {composerTemplate === undefined ? (
+          <>
+            <label className="sr-only" htmlFor="composer-content">
+              记录内容
+            </label>
+            <textarea
+              id="composer-content"
+              ref={textareaRef}
+              className="textarea composer-input"
+              autoFocus
+              placeholder="现在的想法是…"
+              value={content}
+              onChange={(event) => setContent(event.target.value)}
+            />
+          </>
+        ) : (
+          // 选择模板后，模板字段（或文本模式）就是唯一的输入区，占据顶部原内容框的位置
+          <div className="composer-fields composer-fields-primary">
             {composerHasFields && (
               <div className="fields-mode-head">
                 <span className="memo-mode-label">模板字段</span>
@@ -537,10 +541,12 @@ export default function MemoPage(): JSX.Element {
             </select>
           </div>
 
-          <div className="composer-tags">
-            <Icon name="hash" size={15} />
-            <span className="composer-tag-hint">#标签</span>
-          </div>
+          {composerTemplate === undefined && (
+            <div className="composer-tags">
+              <Icon name="hash" size={15} />
+              <span className="composer-tag-hint">#标签</span>
+            </div>
+          )}
 
           <span className="spacer" />
           {!canSubmit && trimmedHint(content, composerTemplate !== undefined, effectiveComposerMode, textDraft, draft)}
@@ -645,9 +651,9 @@ function trimmedHint(
 ): JSX.Element | null {
   if (content.trim() !== '') return null;
   if (hasTemplate && mode === 'text') {
-    return <span className="kbd-hint">请输入内容或粘贴模板文本</span>;
+    return <span className="kbd-hint">请输入模板文本</span>;
   }
-  if (hasTemplate && isDraftEmpty(draft)) return <span className="kbd-hint">请输入内容或填写至少一个字段</span>;
+  if (hasTemplate && isDraftEmpty(draft)) return <span className="kbd-hint">请填写至少一个字段</span>;
   if (!hasTemplate) return <span className="kbd-hint">请输入内容后再记录</span>;
   return null;
 }

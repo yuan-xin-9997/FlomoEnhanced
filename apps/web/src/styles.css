@@ -926,6 +926,13 @@ code {
   padding-top: 14px;
 }
 
+/* 选择模板时，模板字段就是撰写区的主输入区（不再有自由内容框） */
+.composer-fields-primary {
+  border-top: 0;
+  margin-top: 0;
+  padding-top: 0;
+}
+
 /* ---------- 模板字段：模板模式 / 文本模式 ---------- */
 
 .fields-mode-head {
