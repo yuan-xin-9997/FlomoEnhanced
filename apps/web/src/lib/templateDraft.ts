@@ -91,10 +91,33 @@ export function applyTypeDefaults(field: FieldDefinition): FieldDefinition {
   return field;
 }
 
-/** 切换字段类型（保留 key/label/required/help/placeholder，其余按新类型重置） */
-export function changeFieldType(field: FieldDefinition, type: FieldType): FieldDefinition {
+export interface ChangeFieldTypeOptions {
+  /** 其它字段已占用的 key（用于生成不冲突的新 key） */
+  otherKeys?: readonly string[];
+  /** 是否允许按类型自动重算 key（编辑既有模板时为 false） */
+  allowSync?: boolean;
+}
+
+/** key 是否仍是由类型自动生成的（未被显示名同步或手动改过） */
+function isTypeDerivedKey(field: FieldDefinition, otherKeys: readonly string[]): boolean {
+  return field.key === uniqueFieldKey(field.type, otherKeys);
+}
+
+/**
+ * 切换字段类型（保留 key/label/required/help/placeholder，其余按新类型重置）。
+ * 新增字段的 key 若仍由类型自动生成，会随新类型重算，例如 text → number 得到 `number`；
+ * 已按显示名同步过或手动改过的 key 保持不变。
+ */
+export function changeFieldType(
+  field: FieldDefinition,
+  type: FieldType,
+  options: ChangeFieldTypeOptions = {},
+): FieldDefinition {
+  const otherKeys = options.otherKeys ?? [];
+  const allowSync = options.allowSync ?? true;
+  const key = allowSync && isTypeDerivedKey(field, otherKeys) ? uniqueFieldKey(type, otherKeys) : field.key;
   const next: FieldDefinition = {
-    key: field.key,
+    key,
     label: field.label,
     type,
     required: field.required,
@@ -134,12 +157,15 @@ export function syncKeyOnLabelChange(
   if (!options.allowSync) return patchField(fields, index, { label: nextLabel });
 
   const others = fields.filter((_, position) => position !== index).map((item) => item.key);
-  const expectedOldKey = uniqueFieldKey(field.label === '' ? field.type : field.label, others);
-  if (field.key !== expectedOldKey) return patchField(fields, index, { label: nextLabel });
+  const labelBase = field.label.trim() === '' ? field.type : field.label;
+  const isAutoKey =
+    field.key === uniqueFieldKey(labelBase, others) || isTypeDerivedKey(field, others);
+  if (!isAutoKey) return patchField(fields, index, { label: nextLabel });
 
+  const nextBase = nextLabel.trim() === '' ? field.type : nextLabel;
   return patchField(fields, index, {
     label: nextLabel,
-    key: uniqueFieldKey(nextLabel === '' ? field.type : nextLabel, others),
+    key: uniqueFieldKey(nextBase, others),
   });
 }
 

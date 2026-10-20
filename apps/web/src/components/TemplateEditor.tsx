@@ -236,7 +236,9 @@ export default function TemplateEditor({ template, onClose, onSaved }: TemplateE
             <div className="field-editor-list">
               {draft.fields.map((def, index) => (
                 <div
-                  key={`${index}-${def.key}`}
+                  // 用位置作为 React key：key 会随显示名/类型自动重算，
+                  // 若把 def.key 放进 key，输入时会整卡重建导致输入框失焦（无法连续输入）。
+                  key={index}
                   className={`field-editor${dropIndex === index ? ' drop-target' : ''}`}
                   draggable
                   onDragStart={() => {
@@ -333,7 +335,16 @@ export default function TemplateEditor({ template, onClose, onSaved }: TemplateE
                         value={def.type}
                         onChange={(event) =>
                           setFields(
-                            patchField(draft.fields, index, changeFieldType(def, event.target.value as FieldType)),
+                            patchField(
+                              draft.fields,
+                              index,
+                              changeFieldType(def, event.target.value as FieldType, {
+                                otherKeys: draft.fields
+                                  .filter((_, position) => position !== index)
+                                  .map((item) => item.key),
+                                allowSync: !initialKeysRef.current.has(def.key),
+                              }),
+                            ),
                           )
                         }
                       >

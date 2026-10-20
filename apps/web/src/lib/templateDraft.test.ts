@@ -73,6 +73,34 @@ describe('类型切换与配置清理', () => {
     expect(next.maxLength).toBe(200);
   });
 
+  it('新增字段的 key 仍由类型自动生成时，随类型重算', () => {
+    const text = blankField([], 'text');
+    expect(changeFieldType(text, 'number').key).toBe('number');
+    expect(changeFieldType(text, 'number').label).toBe('单行文本');
+    expect(changeFieldType(blankField([], 'select'), 'text').key).toBe('text');
+  });
+
+  it('重算 key 时避开其它字段已占用的 key', () => {
+    const number = blankField([], 'number');
+    const text = blankField([number], 'text');
+    const next = changeFieldType(text, 'number', { otherKeys: [number.key] });
+    expect(next.key).toBe('number_2');
+  });
+
+  it('已按显示名同步或手动改过的 key 不随类型变化', () => {
+    const synced = syncKeyOnLabelChange([blankField([], 'text')], 0, 'Amount', { allowSync: true })[0]!;
+    expect(synced.key).toBe('amount');
+    expect(changeFieldType(synced, 'number').key).toBe('amount');
+
+    const manual = { key: 'my_custom_key', label: '金额', type: 'text' } as FieldDefinition;
+    expect(changeFieldType(manual, 'number').key).toBe('my_custom_key');
+  });
+
+  it('编辑既有模板（allowSync=false）时保留原 key', () => {
+    const existing = { key: 'text', label: '单行文本', type: 'text' } as FieldDefinition;
+    expect(changeFieldType(existing, 'number', { allowSync: false }).key).toBe('text');
+  });
+
   it('applyTypeDefaults 不会覆盖已填的 min/max', () => {
     const field = applyTypeDefaults({ key: 'a', label: 'A', type: 'number', min: -5, max: 5 });
     expect(field.min).toBe(-5);
@@ -158,6 +186,16 @@ describe('syncKeyOnLabelChange（改显示名时是否重算 key）', () => {
     const fields = [text('amount', 'Amount'), text('amount_spent', '其他')];
     const next = syncKeyOnLabelChange(fields, 0, 'Amount Spent', { allowSync: true });
     expect(next[0]?.key).toBe('amount_spent_2');
+  });
+
+  it('新增字段即使 key 初始等于类型名，也会随显示名重算', () => {
+    const fields = [blankField([], 'text')];
+    expect(fields[0]?.key).toBe('text');
+
+    const typed = syncKeyOnLabelChange(fields, 0, '金额', { allowSync: true });
+    expect(typed[0]?.label).toBe('金额');
+    expect(typed[0]?.key).not.toBe('text');
+    expect(KEY_PATTERN.test(typed[0]?.key ?? '')).toBe(true);
   });
 
   it('不改动原数组（不可变）', () => {
