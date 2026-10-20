@@ -17,6 +17,7 @@
 //
 
 import XCTest
+import UIKit
 
 final class AcceptanceUITests: XCTestCase {
     private let username = "iosaccept"
@@ -142,6 +143,101 @@ final class AcceptanceUITests: XCTestCase {
         }
         relaunch(app, signedIn: true, tab: tab)
         return waitFor(app.navigationBars[title], timeout: 60)
+    }
+
+    /// 通过系统编辑菜单粘贴文本；自动处理 iOS 16+ 的跨 App 粘贴授权弹窗。
+    /// 先点击聚焦再长按，键盘弹出后编辑菜单更稳定。
+    private func paste(_ text: String, into element: XCUIElement, app: XCUIApplication) -> Bool {
+        UIPasteboard.general.string = text
+        for _ in 0..<2 {
+            element.tap()
+            Thread.sleep(forTimeInterval: 1.0)
+            element.press(forDuration: 1.2)
+            if let pasteItem = waitForAny(pasteCandidates(in: app), timeout: 5) {
+                pasteItem.tap()
+                allowPasteIfNeeded(app)
+                return true
+            }
+        }
+        return false
+    }
+
+    /// 编辑菜单里的「粘贴」项（中英文都尝试；iOS 27 的菜单层级可能是 menuItems 或 buttons）
+    private func pasteCandidates(in app: XCUIApplication) -> [XCUIElement] {
+        var items: [XCUIElement] = []
+        for label in ["粘贴", "Paste"] {
+            items.append(app.menuItems[label])
+            items.append(app.buttons[label])
+            items.append(app.staticTexts[label])
+            items.append(app.menuItems.matching(NSPredicate(format: "label CONTAINS %@", label)).firstMatch)
+        }
+        return items
+    }
+
+    /// 处理系统「允许粘贴」授权弹窗（可能由 SpringBoard 呈现）
+    private func allowPasteIfNeeded(_ app: XCUIApplication) {
+        Thread.sleep(forTimeInterval: 1.2)
+        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        for host in [app, springboard] {
+            let alert = host.alerts.firstMatch
+            guard alert.exists else { continue }
+            let buttons = alert.buttons.allElementsBoundByIndex
+            let allow = buttons.first {
+                ($0.label.contains("允许") && !$0.label.contains("不允许"))
+                    || ($0.label.contains("Allow") && !$0.label.contains("Don't"))
+            }
+            (allow ?? buttons.last)?.tap()
+            Thread.sleep(forTimeInterval: 0.8)
+            break
+        }
+    }
+
+    /// 打开「新建记录」→ 选用「iOS 验收模板」→ 切到文本模式；返回文本编辑器元素
+    private func openMemoTextMode(_ app: XCUIApplication) -> XCUIElement? {
+        let entry = waitForAny([
+            app.buttons["新建记录"],
+            app.buttons["addMemo"],
+        ], timeout: 8) ?? findButton(containing: "新建", in: app)
+        guard let entry else {
+            XCTFail("未找到「新建记录」入口按钮")
+            return nil
+        }
+        entry.tap()
+        Thread.sleep(forTimeInterval: 2.5)
+
+        var picker = app.buttons["memoTemplatePicker"]
+        if !waitFor(picker, timeout: 6), let fallback = findLabeledElement(containing: "不使用模板", in: app) {
+            picker = fallback
+        }
+        guard waitFor(picker, timeout: 4) else {
+            XCTFail("未找到模板 Picker（memoTemplatePicker）")
+            return nil
+        }
+        picker.tap()
+        Thread.sleep(forTimeInterval: 1.5)
+        guard let templateOption = findLabeledElement(containing: "验收模板", in: app) else {
+            XCTFail("模板菜单里未出现「iOS 验收模板」")
+            return nil
+        }
+        templateOption.tap()
+        Thread.sleep(forTimeInterval: 2.0)
+
+        let textModeButton = app.segmentedControls["memoFieldModePicker"].buttons["文本模式"].exists
+            ? app.segmentedControls["memoFieldModePicker"].buttons["文本模式"]
+            : app.buttons["文本模式"]
+        guard waitFor(textModeButton, timeout: 10) else {
+            XCTFail("未找到「文本模式」切换")
+            return nil
+        }
+        textModeButton.tap()
+        Thread.sleep(forTimeInterval: 1.5)
+
+        let editor = app.textViews["memoTextFieldsInput"]
+        guard waitFor(editor, timeout: 10) else {
+            XCTFail("文本模式编辑器未出现")
+            return nil
+        }
+        return editor
     }
 
     // MARK: - 用例
@@ -325,5 +421,101 @@ final class AcceptanceUITests: XCTestCase {
         XCTAssertTrue(waitFor(app.navigationBars["记录"], timeout: 60), "登录后未进入主界面")
         Thread.sleep(forTimeInterval: 3.0)
         attach("13-登录成功")
+    }
+
+    /// 记录页：文本模式粘贴无法识别的行 → 逐项报错 + 保存被阻断
+    func test09MemoTextModeErrors() {
+        let app = start(signedIn: true, tab: memoTab)
+        XCTAssertTrue(waitFor(app.navigationBars["记录"], timeout: 60), "记录页未出现")
+        Thread.sleep(forTimeInterval: 3.0)
+
+        guard let editor = openMemoTextMode(app) else { return }
+        attach("16-文本模式-编辑器")
+
+        XCTAssertTrue(paste("###：oops", into: editor, app: app), "粘贴失败")
+        Thread.sleep(forTimeInterval: 1.5)
+        XCTAssertTrue(
+            waitFor(
+                app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "无法识别")).firstMatch,
+                timeout: 8
+            ),
+            "未出现未识别行的错误提示"
+        )
+        attach("17-文本模式-解析报错")
+
+        app.buttons["保存"].tap()
+        Thread.sleep(forTimeInterval: 1.5)
+        XCTAssertTrue(
+            waitFor(
+                app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "文本识别未通过")).firstMatch,
+                timeout: 8
+            ),
+            "存在未识别行时保存未被阻断"
+        )
+        attach("18-文本模式-保存阻断")
+
+        app.buttons["取消"].tap()
+        Thread.sleep(forTimeInterval: 1.0)
+    }
+
+    /// 记录页：文本模式粘贴完整字段文本 → 全部识别 → 切回模板模式回填 → 保存成功
+    func test10MemoTextModeSave() {
+        let app = start(signedIn: true, tab: memoTab)
+        XCTAssertTrue(waitFor(app.navigationBars["记录"], timeout: 60), "记录页未出现")
+        Thread.sleep(forTimeInterval: 3.0)
+
+        guard let editor = openMemoTextMode(app) else { return }
+
+        let goodText = """
+        标题：iOS 文本模式验收
+        体重(kg)：70.5
+        金额：¥88.50
+        完成度：50%
+        心情：3
+        日期：2026-10-19
+        时间点：2026-10-19 22:30+08:00
+        餐次：午餐
+        运动：跑步、游泳
+        已完成：是
+        参考链接：https://example.com
+        详情：第一行
+        第二行
+        """
+        XCTAssertTrue(paste(goodText, into: editor, app: app), "粘贴失败")
+        Thread.sleep(forTimeInterval: 2.0)
+        XCTAssertTrue(
+            waitFor(
+                app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "已识别 12 个字段")).firstMatch,
+                timeout: 8
+            ),
+            "未提示识别到 12 个字段"
+        )
+        attach("19-文本模式-识别成功")
+
+        // 切回模板模式：字段值回填
+        let templateModeButton = app.segmentedControls["memoFieldModePicker"].buttons["模板模式"].exists
+            ? app.segmentedControls["memoFieldModePicker"].buttons["模板模式"]
+            : app.buttons["模板模式"]
+        XCTAssertTrue(waitFor(templateModeButton, timeout: 8), "未找到「模板模式」切换")
+        templateModeButton.tap()
+        Thread.sleep(forTimeInterval: 1.5)
+        let titleField = app.textFields.matching(
+            NSPredicate(format: "value == %@", "iOS 文本模式验收")
+        ).firstMatch
+        XCTAssertTrue(waitFor(titleField, timeout: 8), "切回模板模式后标题未回填")
+        attach("20-文本模式-切回模板模式")
+
+        // 保存 → 回到记录页，卡片出现新记录
+        app.buttons["保存"].tap()
+        XCTAssertTrue(waitFor(app.navigationBars["记录"], timeout: 30), "保存后未回到记录页")
+        Thread.sleep(forTimeInterval: 3.0)
+        XCTAssertTrue(
+            waitFor(
+                app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "iOS 文本模式验收")).firstMatch,
+                timeout: 15
+            ),
+            "记录列表未出现新记录"
+        )
+        attach("21-文本模式-保存成功")
     }
 }

@@ -6,3 +6,4 @@ export * from './types.js';
 export * from './template.js';
 export * from './stats.js';
 export * from './tags.js';
+export * from './memoText.js';

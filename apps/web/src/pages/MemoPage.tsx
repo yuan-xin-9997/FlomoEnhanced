@@ -6,14 +6,17 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import type { FieldValue, Memo, Template } from '@flomo/shared';
+import { formatMemoText } from '@flomo/shared';
+import type { FieldValue, Memo, MemoTextLineError, Template } from '@flomo/shared';
 import { memosApi, templatesApi, errorMessage } from '../api/client';
 import FieldForm from '../components/FieldForm';
 import Icon from '../components/icons';
 import MemoCard from '../components/MemoCard';
 import MemoEditModal from '../components/MemoEditModal';
-import { EmptyState, ErrorBox, SkeletonList } from '../components/ui';
+import MemoTextEditor from '../components/MemoTextEditor';
+import { EmptyState, ErrorBox, Segmented, SkeletonList } from '../components/ui';
 import { emptyDraft, isDraftEmpty, normalizeDraft } from '../lib/fieldForm';
+import { parseMemoTextDraft } from '../lib/memoText';
 import { formatCount } from '../lib/format';
 import {
   NO_TEMPLATE_FILTER,
@@ -29,6 +32,9 @@ import { useOverview } from '../state/overview';
 import { useToast } from '../state/toast';
 
 const PAGE_SIZE = 20;
+
+/** 模板字段的编辑/展示方式 */
+type ComposerMode = 'template' | 'text';
 
 /** URL 查询参数 → 筛选条件（`template=none` 表示无模板） */
 function filtersFromSearch(search: URLSearchParams): MemoFilters {
@@ -70,6 +76,11 @@ export default function MemoPage(): JSX.Element {
   const [content, setContent] = useState('');
   const [draft, setDraft] = useState<Record<string, FieldValue>>({});
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [composerMode, setComposerMode] = useState<ComposerMode>('template');
+  const [textDraft, setTextDraft] = useState('');
+  const [textLineErrors, setTextLineErrors] = useState<MemoTextLineError[]>([]);
+  const [textNotice, setTextNotice] = useState('');
+  const [textWarning, setTextWarning] = useState('');
   const [formError, setFormError] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
@@ -93,6 +104,8 @@ export default function MemoPage(): JSX.Element {
     () => templates.find((template) => template.id === composerTemplateId),
     [templates, composerTemplateId],
   );
+  const composerHasFields = composerTemplate !== undefined && composerTemplate.fields.length > 0;
+  const effectiveComposerMode: ComposerMode = composerHasFields ? composerMode : 'template';
 
   /* ------------------------------ 数据加载 ------------------------------ */
 
@@ -148,8 +161,14 @@ export default function MemoPage(): JSX.Element {
 
   // 切换撰写区模板时重置字段草稿（保留模板选择方便连续记账）
   useEffect(() => {
-    setDraft(composerTemplate === undefined ? {} : emptyDraft(composerTemplate.fields));
+    const nextDraft = composerTemplate === undefined ? {} : emptyDraft(composerTemplate.fields);
+    setDraft(nextDraft);
     setFieldErrors({});
+    setComposerMode('template');
+    setTextLineErrors([]);
+    setTextNotice('');
+    setTextWarning('');
+    setTextDraft(composerTemplate === undefined ? '' : formatMemoText(composerTemplate.fields, nextDraft));
   }, [composerTemplate]);
 
   // Ctrl / Cmd + K 聚焦搜索框
@@ -185,24 +204,88 @@ export default function MemoPage(): JSX.Element {
 
   /* ------------------------------ 提交 ------------------------------ */
 
+  const applyComposerText = (text: string): ReturnType<typeof parseMemoTextDraft> | null => {
+    if (composerTemplate === undefined) return null;
+    const parsed = parseMemoTextDraft(composerTemplate.fields, text);
+    setDraft(parsed.draft);
+    setFieldErrors(parsed.errors);
+    setTextLineErrors(parsed.lineErrors);
+    setTextNotice(parsed.ok ? `已识别 ${parsed.matchedCount} 个字段` : '');
+    setTextWarning('');
+    setFormError('');
+    return parsed;
+  };
+
+  /** 手工输入不立即解析；清掉旧提示，等切换 / 保存时再处理 */
+  const onComposerTextChange = (text: string): void => {
+    setTextDraft(text);
+    setTextLineErrors([]);
+    setTextNotice('');
+    setTextWarning('');
+    setFieldErrors({});
+    setFormError('');
+  };
+
+  /** 粘贴后立即按「插入后的完整文本」解析 */
+  const onComposerTextPaste = (text: string): void => {
+    setTextDraft(text);
+    applyComposerText(text);
+  };
+
+  const onComposerModeChange = (next: ComposerMode): void => {
+    if (next === effectiveComposerMode) return;
+    if (next === 'text') {
+      if (composerTemplate !== undefined) {
+        setTextDraft(formatMemoText(composerTemplate.fields, draft));
+      }
+      setTextLineErrors([]);
+      setTextNotice('');
+      setTextWarning('');
+      setFieldErrors({});
+      setFormError('');
+      setComposerMode('text');
+      return;
+    }
+
+    // 文本 → 模板：重新解析当前文本，让手动修改也生效
+    if (composerTemplate !== undefined) {
+      const parsed = applyComposerText(textDraft);
+      if (parsed !== null && parsed.lineErrors.length > 0) {
+        setTextWarning(`文本中有 ${parsed.lineErrors.length} 行无法识别，已忽略；当前以模板字段为准。`);
+      }
+    }
+    setComposerMode('template');
+  };
+
   const canSubmit = useMemo(() => {
-    const hasContent = content.trim() !== '';
-    const hasValues = composerTemplate !== undefined && !isDraftEmpty(draft);
-    return hasContent || hasValues;
-  }, [content, composerTemplate, draft]);
+    if (content.trim() !== '') return true;
+    if (composerTemplate !== undefined && effectiveComposerMode === 'text') {
+      return textDraft.trim() !== '';
+    }
+    return composerTemplate !== undefined && !isDraftEmpty(draft);
+  }, [content, composerTemplate, effectiveComposerMode, textDraft, draft]);
 
   const onSubmit = async (): Promise<void> => {
     const trimmed = content.trim();
     let values: Record<string, FieldValue> = {};
 
     if (composerTemplate !== undefined) {
-      const normalized = normalizeDraft(composerTemplate.fields, draft);
-      if (!normalized.ok) {
-        setFieldErrors(normalized.errors);
-        setFormError('字段校验未通过，请检查后重试');
-        return;
+      if (effectiveComposerMode === 'text') {
+        const parsed = applyComposerText(textDraft);
+        if (parsed === null || !parsed.ok) {
+          setFormError('文本识别未通过，请根据提示修正后再保存');
+          return;
+        }
+        values = parsed.values;
+      } else {
+        const normalized = normalizeDraft(composerTemplate.fields, draft);
+        if (!normalized.ok) {
+          setFieldErrors(normalized.errors);
+          setFormError('字段校验未通过，请检查后重试');
+          return;
+        }
+        values = normalized.values;
       }
-      values = normalized.values;
     }
 
     if (trimmed === '' && (composerTemplate === undefined || isDraftEmpty(values))) {
@@ -220,9 +303,14 @@ export default function MemoPage(): JSX.Element {
           values,
         }),
       );
+      const nextDraft = composerTemplate === undefined ? {} : emptyDraft(composerTemplate.fields);
       setContent('');
-      setDraft(composerTemplate === undefined ? {} : emptyDraft(composerTemplate.fields));
+      setDraft(nextDraft);
       setFieldErrors({});
+      setTextLineErrors([]);
+      setTextNotice('');
+      setTextWarning('');
+      setTextDraft(composerTemplate === undefined ? '' : formatMemoText(composerTemplate.fields, nextDraft));
       toast.success('已记录');
       cursorRef.current = null;
       void loadMemos('reset');
@@ -376,23 +464,51 @@ export default function MemoPage(): JSX.Element {
 
         {composerTemplate !== undefined && (
           <div className="composer-fields">
-            <FieldForm
-              fields={composerTemplate.fields}
-              values={draft}
-              errors={fieldErrors}
-              idPrefix="composer"
-              onChange={(key, value) => {
-                setDraft((previous) => ({ ...previous, [key]: value }));
-                setFieldErrors((previous) => {
-                  if (previous[key] === undefined) return previous;
-                  const next = { ...previous };
-                  delete next[key];
-                  return next;
-                });
-              }}
-            />
+            {composerHasFields && (
+              <div className="fields-mode-head">
+                <span className="memo-mode-label">模板字段</span>
+                <Segmented
+                  items={[
+                    { key: 'template', label: '模板模式' },
+                    { key: 'text', label: '文本模式' },
+                  ]}
+                  value={effectiveComposerMode}
+                  onChange={(key) => onComposerModeChange(key as ComposerMode)}
+                />
+              </div>
+            )}
+            {effectiveComposerMode === 'template' ? (
+              <FieldForm
+                fields={composerTemplate.fields}
+                values={draft}
+                errors={fieldErrors}
+                idPrefix="composer"
+                onChange={(key, value) => {
+                  setDraft((previous) => ({ ...previous, [key]: value }));
+                  setFieldErrors((previous) => {
+                    if (previous[key] === undefined) return previous;
+                    const next = { ...previous };
+                    delete next[key];
+                    return next;
+                  });
+                }}
+              />
+            ) : (
+              <MemoTextEditor
+                id="composer-text-fields"
+                value={textDraft}
+                onChange={onComposerTextChange}
+                onPasteText={onComposerTextPaste}
+                lineErrors={textLineErrors}
+                fieldErrors={fieldErrors}
+                notice={textNotice}
+                rows={6}
+              />
+            )}
           </div>
         )}
+
+        {textWarning !== '' && <div className="notice notice-warn mt-12">{textWarning}</div>}
 
         {formError !== '' && (
           <div className="error-box mt-12" role="alert">
@@ -427,7 +543,7 @@ export default function MemoPage(): JSX.Element {
           </div>
 
           <span className="spacer" />
-          {!canSubmit && trimmedHint(content, composerTemplate !== undefined, draft)}
+          {!canSubmit && trimmedHint(content, composerTemplate !== undefined, effectiveComposerMode, textDraft, draft)}
           <button
             type="button"
             className="send-btn"
@@ -520,8 +636,17 @@ export default function MemoPage(): JSX.Element {
 }
 
 /** 提交按钮禁用时的中文原因提示 */
-function trimmedHint(content: string, hasTemplate: boolean, draft: Record<string, FieldValue>): JSX.Element | null {
+function trimmedHint(
+  content: string,
+  hasTemplate: boolean,
+  mode: ComposerMode,
+  text: string,
+  draft: Record<string, FieldValue>,
+): JSX.Element | null {
   if (content.trim() !== '') return null;
+  if (hasTemplate && mode === 'text') {
+    return <span className="kbd-hint">请输入内容或粘贴模板文本</span>;
+  }
   if (hasTemplate && isDraftEmpty(draft)) return <span className="kbd-hint">请输入内容或填写至少一个字段</span>;
   if (!hasTemplate) return <span className="kbd-hint">请输入内容后再记录</span>;
   return null;

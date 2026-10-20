@@ -1,10 +1,16 @@
 /**
  * 单条想法卡片：时间、模板徽标、内容（#标签高亮）、字段值表格、标签、操作按钮。
+ * 每个有模板字段的卡片可独立切换「模板模式 / 文本模式」。
  */
+import { useState } from 'react';
+import { formatMemoText } from '@flomo/shared';
 import type { Memo, Template } from '@flomo/shared';
 import { formatDateTime, formatRelativeTime } from '../lib/format';
 import { highlightTagSegments } from '../lib/memoQuery';
 import FieldValueTable from './FieldValueTable';
+import { Segmented } from './ui';
+
+type CardMode = 'template' | 'text';
 
 export interface MemoCardProps {
   memo: Memo;
@@ -26,6 +32,10 @@ export default function MemoCard({
 }: MemoCardProps): JSX.Element {
   const segments = highlightTagSegments(memo.content);
   const templateName = template?.name ?? memo.templateName;
+  const fields = template?.fields ?? [];
+  const hasFields = fields.length > 0;
+  const [mode, setMode] = useState<CardMode>('template');
+  const text = hasFields ? formatMemoText(fields, memo.values) : '';
 
   return (
     <article className="memo">
@@ -81,7 +91,30 @@ export default function MemoCard({
         </p>
       )}
 
-      <FieldValueTable fields={template?.fields ?? []} values={memo.values} />
+      {hasFields ? (
+        <div className="memo-fields">
+          <div className="fields-mode-head">
+            <span className="memo-mode-label">模板字段</span>
+            <Segmented
+              items={[
+                { key: 'template', label: '模板模式' },
+                { key: 'text', label: '文本模式' },
+              ]}
+              value={mode}
+              onChange={(key) => setMode(key as CardMode)}
+            />
+          </div>
+          {mode === 'template' ? (
+            <FieldValueTable fields={fields} values={memo.values} />
+          ) : (
+            <pre className={text === '' ? 'memo-text memo-text-empty' : 'memo-text'}>
+              {text === '' ? '（无字段值）' : text}
+            </pre>
+          )}
+        </div>
+      ) : (
+        <FieldValueTable fields={[]} values={memo.values} />
+      )}
 
       {memo.tags.length > 0 && (
         <div className="memo-tags">

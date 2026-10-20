@@ -8,7 +8,7 @@
 用原生 SwiftUI 实现与 Web 端对齐的完整客户端：
 
 1. 注册 / 登录 / 登出 / 修改密码（Cookie 会话）
-2. 记录（memo）：列表（筛选 + 搜索 + 游标分页 + 下拉刷新）、新建、编辑、删除；模板字段表单（12 种字段类型）
+2. 记录（memo）：列表（筛选 + 搜索 + 游标分页 + 下拉刷新）、新建、编辑、删除；模板字段表单（12 种字段类型）与文本模式（逐行「字段名：值」，粘贴自动识别）
 3. 模板：列表、新建、编辑（含字段定义编辑）、删除（归档）/ 恢复、复制、**导入（文件选择）**、**导出（分享 JSON 文件）**
 4. 洞察：模板选择 + 区间（最近 7 天 / 30 天 / 6 个月 / 自定义）、模板统计全量呈现（Swift Charts 图表）、CSV 导出（分享）
 5. 设置：服务器地址（可配置，默认 `http://192.168.0.111:35080`）、健康检查、账号信息、修改密码、登出
@@ -469,12 +469,13 @@ extension Color { init(hex: UInt32) }
 - `MemoListView`：`NavigationStack`；工具条：筛选按钮（sheet `MemoFilterView`）、刷新；列表用 `List`/`ScrollView` + `LazyVStack`。
   - 筛选：模板（全部 / 无模板 / 具体模板）、标签（文本输入或从已加载标签选）、日期区间（从/到，`DatePicker`）、关键词（content 模糊）。
   - 分页：`limit = 20`，`nextCursor` 触底加载更多（`total` 显示总数）；下拉刷新重置。
-  - `MemoCardView`：内容（`#标签` 高亮为蓝色胶囊）、`templateName` 徽标（模板色）、字段值表格（`FieldFormat.value`）、时间（`Dates.formatTimestamp`）、标签胶囊。
+  - `MemoCardView`：内容（`#标签` 高亮为蓝色胶囊）、`templateName` 徽标（模板色）、字段值表格（`FieldFormat.value`）、时间（`Dates.formatTimestamp`）、标签胶囊；有模板字段时每条卡片可独立切换「模板模式 / 文本模式」。
   - 空态 / 加载中 / 错误（含重试按钮）三态齐全。
   - 右下角悬浮「+」→ `MemoEditorView(memo: nil)`。
 - `MemoEditorView(memo: Memo?)`（新建 / 编辑共用，sheet 呈现）：
   - 模板选择（无模板 / 各模板，`.pickerStyle(.menu)`）；切换模板时字段值重置（编辑态提示将清空）。
   - 字段表单按 `field.type` 渲染（见 §5）；`required` 字段未填给出提示（服务端会 422，本地先拦）。
+  - 字段区可切换「模板模式 / 文本模式」：文本按 `MemoTextCodec.format` 序列化，每行「字段名：值」；粘贴时通过 `MemoTextEditorView` 的 `UITextView.paste(_:)` 感知并按完整文本解析；手工输入在切回模板模式 / 保存时重新解析。解析错误逐行展示，存在未识别行或非法值时阻止保存。
   - 内容 `TextEditor`（多行，自动高度合适）+ 标签输入（逗号/空格分隔，或直接写 `#标签`，编辑器下方实时预览提取结果）。
   - 保存：`createMemo` / `updateMemo`；`createdAt` 新建时默认不传（服务端用 now）；编辑保留原值。
   - 删除（编辑态，二次确认）。
@@ -596,9 +597,10 @@ ssh macbook-wifi "xcrun xcresulttool export attachments --path /tmp/flomo-uitest
 
 **验收标准（PM 逐项过）**：
 1. `xcodebuild build` 0 error（warning 可接受）。
-2. UI 验收测试（`FlomoEnhancedUITests`）全绿（8 用例 / 16 张截图）：登录页渲染 / 四 Tab 切换 /
+2. UI 验收测试（`FlomoEnhancedUITests`）全绿（10 用例 / 22 张截图）：登录页渲染 / 四 Tab 切换 /
    新建记录弹窗 / 模板编辑器 / 模板导入弹窗 + 导出分享面板 / 设置页（含健康检查、改密、登出）/
-   洞察页（全局概览 + 选模板后模板洞察与字段统计）/ 真实手动登录。
+   洞察页（全局概览 + 选模板后模板洞察与字段统计）/ 真实手动登录 /
+   模板文本模式（粘贴解析报错并阻断保存、完整识别后切回模板模式并保存）。
 3. 截图逐屏留档（`.tmp-shots/`，经 `xcresulttool export attachments` 导出）。
 4. 真机安装说明（免费 Apple ID）见 `apps/ios/README.md`。
 

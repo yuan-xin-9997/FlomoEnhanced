@@ -926,6 +926,43 @@ code {
   padding-top: 14px;
 }
 
+/* ---------- 模板字段：模板模式 / 文本模式 ---------- */
+
+.fields-mode-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.memo-mode-label {
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.memo-text-input {
+  min-height: 132px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.memo-text-errors {
+  display: block;
+}
+
+.memo-text-errors ul {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.memo-text-errors li + li {
+  margin-top: 2px;
+}
+
 .composer-foot {
   display: flex;
   align-items: center;
@@ -1162,6 +1199,41 @@ code {
 
 .memo-values a {
   overflow-wrap: anywhere;
+}
+
+.memo-fields {
+  margin-top: 10px;
+}
+
+.memo-fields .memo-values {
+  margin-top: 0;
+}
+
+.memo-fields .segmented {
+  padding: 2px;
+}
+
+.memo-fields .segmented button {
+  padding: 2px 9px;
+  font-size: 12px;
+}
+
+.memo-text {
+  margin: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-soft);
+  padding: 8px 11px;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.65;
+  color: var(--fg);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.memo-text-empty {
+  color: var(--muted);
 }
 
 .memo-tags {

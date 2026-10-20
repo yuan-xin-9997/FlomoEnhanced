@@ -51,6 +51,12 @@ struct MemoEditorView: View {
     /// 切换模板时缓存各模板的草稿，切回来不丢失输入
     @State private var draftCache: [String: [String: FieldValue]] = [:]
     @State private var fieldErrors: [String: String] = [:]
+    /// 模板字段的展示 / 编辑方式（每条记录独立）
+    @State private var fieldMode: MemoFieldMode = .template
+    @State private var textDraft = ""
+    @State private var textLineErrors: [MemoTextLineError] = []
+    @State private var textNotice = ""
+    @State private var textWarning = ""
     @State private var formError = ""
     @State private var isSaving = false
     @State private var isDeleting = false
@@ -173,7 +179,7 @@ struct MemoEditorView: View {
                     .foregroundStyle(content.count > MemoFieldDraft.contentMax ? Theme.danger : Theme.textSecondary)
                 Spacer(minLength: 0)
                 if !canSave && !isSaving {
-                    Text("请输入内容或填写至少一个字段")
+                    Text(saveHint)
                         .font(.caption2)
                         .foregroundStyle(Theme.textSecondary)
                 }
@@ -226,6 +232,7 @@ struct MemoEditorView: View {
             }
             .pickerStyle(.menu)
             .labelsHidden()
+            .accessibilityIdentifier("memoTemplatePicker")
             .frame(maxWidth: .infinity, alignment: .leading)
 
             if isLoadingTemplates {
@@ -259,7 +266,40 @@ struct MemoEditorView: View {
 
             if let fields = selectedFields, !fields.isEmpty {
                 Divider()
-                MemoFieldFormView(fields: fields, draft: $fieldDraft, errors: fieldErrors)
+                HStack(spacing: 8) {
+                    Text("模板字段")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(Theme.textSecondary)
+                    Spacer(minLength: 0)
+                    Picker("", selection: fieldModeBinding) {
+                        ForEach(MemoFieldMode.allCases) { mode in
+                            Text(mode.label).tag(mode)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .accessibilityIdentifier("memoFieldModePicker")
+                    .frame(width: 168)
+                }
+
+                if effectiveFieldMode == .template {
+                    MemoFieldFormView(fields: fields, draft: $fieldDraft, errors: fieldErrors)
+                } else {
+                    MemoTextEditorView(
+                        text: textBinding,
+                        lineErrors: textLineErrors,
+                        fieldErrors: fieldErrors,
+                        notice: textNotice,
+                        onPaste: onTextPaste
+                    )
+                }
+            }
+
+            if !textWarning.isEmpty {
+                Text(textWarning)
+                    .font(.caption2)
+                    .foregroundStyle(Theme.warning)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             if isTemplateChanged, memo != nil {
@@ -335,6 +375,31 @@ struct MemoEditorView: View {
         selectedChoice?.fields
     }
 
+    /// 当前模板是否有可编辑字段（文本模式只在有字段时提供）
+    private var hasTemplateFields: Bool {
+        if let fields = selectedFields { return !fields.isEmpty }
+        return false
+    }
+
+    /// 没有字段 / 模板不可用时强制回模板模式
+    private var effectiveFieldMode: MemoFieldMode {
+        hasTemplateFields ? fieldMode : .template
+    }
+
+    private var fieldModeBinding: Binding<MemoFieldMode> {
+        Binding(
+            get: { effectiveFieldMode },
+            set: { changeFieldMode($0) }
+        )
+    }
+
+    private var textBinding: Binding<String> {
+        Binding(
+            get: { textDraft },
+            set: { onTextChange($0) }
+        )
+    }
+
     private var isTemplateChanged: Bool {
         guard let memo else { return false }
         return templateSelection != (memo.templateId ?? "")
@@ -367,8 +432,19 @@ struct MemoEditorView: View {
     private var canSave: Bool {
         if isSaving || isDeleting { return false }
         if !trimmedContent.isEmpty { return true }
+        if effectiveFieldMode == .text {
+            return !textDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
         if !isDraftEmpty { return true }
         return hasExistingValues
+    }
+
+    /// 提交按钮禁用时的中文原因
+    private var saveHint: String {
+        if hasTemplateFields && effectiveFieldMode == .text {
+            return "请输入内容或粘贴模板文本"
+        }
+        return "请输入内容或填写至少一个字段"
     }
 
     // MARK: - 加载与草稿准备
@@ -403,6 +479,7 @@ struct MemoEditorView: View {
             fieldDraft = MemoFieldDraft.empty(fields: fields)
         }
         draftCache[templateSelection] = fieldDraft
+        textDraft = MemoTextCodec.format(fields: fields, values: fieldDraft)
     }
 
     /// 切换模板：缓存当前草稿 → 恢复目标模板的草稿（无缓存则新建 / 用原记录值）
@@ -412,21 +489,87 @@ struct MemoEditorView: View {
         draftCache[templateSelection] = fieldDraft
         templateSelection = newValue
         fieldErrors = [:]
+        fieldMode = .template
+        textLineErrors = []
+        textNotice = ""
+        textWarning = ""
+        formError = ""
 
         if let cached = draftCache[newValue] {
             fieldDraft = cached
-            return
-        }
-        if let choice = templateChoices.first(where: { $0.id == newValue }), let fields = choice.fields {
+        } else if let choice = templateChoices.first(where: { $0.id == newValue }), let fields = choice.fields {
             if let memo, newValue == memo.templateId {
                 fieldDraft = MemoFieldDraft.draft(fields: fields, values: memo.values)
             } else {
                 fieldDraft = MemoFieldDraft.empty(fields: fields)
             }
+            draftCache[newValue] = fieldDraft
         } else {
             fieldDraft = [:]
         }
-        draftCache[newValue] = fieldDraft
+
+        if let fields = templateChoices.first(where: { $0.id == newValue })?.fields, !fields.isEmpty {
+            textDraft = MemoTextCodec.format(fields: fields, values: fieldDraft)
+        } else {
+            textDraft = ""
+        }
+    }
+
+    // MARK: - 文本模式
+
+    /// 解析文本 → 草稿 / 错误 / 提示；返回结果供保存时判断
+    @discardableResult
+    private func applyText(_ text: String) -> MemoTextDraftResult? {
+        guard let fields = selectedFields else { return nil }
+        let result = MemoTextDraft.parse(fields: fields, text: text)
+        fieldDraft = result.draft
+        fieldErrors = result.errors
+        textLineErrors = result.lineErrors
+        textNotice = result.ok ? "已识别 \(result.matchedCount) 个字段" : ""
+        textWarning = ""
+        formError = ""
+        return result
+    }
+
+    /// 手工输入不立即解析；清掉旧提示，等切换 / 保存时再处理
+    private func onTextChange(_ text: String) {
+        textDraft = text
+        textLineErrors = []
+        textNotice = ""
+        textWarning = ""
+        fieldErrors = [:]
+        formError = ""
+    }
+
+    /// 粘贴后立即按「插入后的完整文本」解析
+    private func onTextPaste(_ text: String) {
+        textDraft = text
+        applyText(text)
+    }
+
+    private func changeFieldMode(_ next: MemoFieldMode) {
+        guard next != effectiveFieldMode else { return }
+        if next == .text {
+            if let fields = selectedFields {
+                textDraft = MemoTextCodec.format(fields: fields, values: fieldDraft)
+            }
+            textLineErrors = []
+            textNotice = ""
+            textWarning = ""
+            fieldErrors = [:]
+            formError = ""
+            fieldMode = .text
+            return
+        }
+
+        // 文本 → 模板：重新解析当前文本，让手动修改也生效
+        if let fields = selectedFields {
+            let parsed = applyText(textDraft)
+            if let parsed, !parsed.lineErrors.isEmpty {
+                textWarning = "文本中有 \(parsed.lineErrors.count) 行无法识别，已忽略；当前以模板字段为准。"
+            }
+        }
+        fieldMode = .template
     }
 
     // MARK: - 保存 / 删除
@@ -439,9 +582,19 @@ struct MemoEditorView: View {
         var values: [String: FieldValue] = [:]
 
         if let fields = selectedFields {
-            let result = MemoFieldDraft.normalize(fields: fields, draft: fieldDraft)
-            errors = result.errors
-            values = result.values
+            if effectiveFieldMode == .text {
+                let parsed = applyText(textDraft)
+                guard let parsed, parsed.ok else {
+                    formError = "文本识别未通过，请根据提示修正后再保存"
+                    return
+                }
+                errors = parsed.errors
+                values = parsed.values
+            } else {
+                let result = MemoFieldDraft.normalize(fields: fields, draft: fieldDraft)
+                errors = result.errors
+                values = result.values
+            }
         } else if templateSelection.isEmpty {
             values = [:]
         } else if let memo {

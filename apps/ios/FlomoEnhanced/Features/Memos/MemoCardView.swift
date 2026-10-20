@@ -15,13 +15,18 @@ struct MemoCardView: View {
     var onTagTap: ((String) -> Void)?
     var onTemplateTap: ((String) -> Void)?
 
+    /// 每条卡片独立的展示模式
+    @State private var fieldMode: MemoFieldMode = .template
+
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             header
             if !trimmedContent.isEmpty {
                 contentText
             }
-            if !fieldRows.isEmpty {
+            if hasTemplateFields {
+                fieldSection
+            } else if !fieldRows.isEmpty {
                 fieldTable
             }
             if !memo.tags.isEmpty {
@@ -108,6 +113,71 @@ struct MemoCardView: View {
     }
 
     // MARK: - 字段值列表
+
+    private var templateFields: [FieldDefinition] {
+        template?.fields ?? []
+    }
+
+    private var hasTemplateFields: Bool {
+        !templateFields.isEmpty
+    }
+
+    private var formattedText: String {
+        MemoTextCodec.format(fields: templateFields, values: memo.values)
+    }
+
+    private var fieldSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Text("模板字段")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(Theme.textSecondary)
+                Spacer(minLength: 0)
+                Picker("", selection: $fieldMode) {
+                    ForEach(MemoFieldMode.allCases) { mode in
+                        Text(mode.label).tag(mode)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .frame(width: 168)
+            }
+
+            if fieldMode == .template {
+                if fieldRows.isEmpty {
+                    emptyFieldText
+                } else {
+                    fieldTable
+                }
+            } else if formattedText.isEmpty {
+                emptyFieldText
+            } else {
+                Text(formattedText)
+                    .font(.subheadline)
+                    .foregroundStyle(Theme.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(10)
+                    .background(
+                        Theme.bg.opacity(0.55),
+                        in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    )
+                    .textSelection(.enabled)
+            }
+        }
+    }
+
+    private var emptyFieldText: some View {
+        Text("（无字段值）")
+            .font(.caption)
+            .foregroundStyle(Theme.textSecondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(10)
+            .background(
+                Theme.bg.opacity(0.55),
+                in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+            )
+    }
 
     private var fieldTable: some View {
         Grid(alignment: .topLeading, horizontalSpacing: 12, verticalSpacing: 6) {
