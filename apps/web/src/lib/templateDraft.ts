@@ -103,10 +103,17 @@ function isTypeDerivedKey(field: FieldDefinition, otherKeys: readonly string[]):
   return field.key === uniqueFieldKey(field.type, otherKeys);
 }
 
+/** 显示名是否仍是该类型的默认名（或尚未填写） */
+function isTypeDerivedLabel(field: FieldDefinition): boolean {
+  const label = field.label.trim();
+  return label === '' || label === FIELD_TYPE_META[field.type].label;
+}
+
 /**
- * 切换字段类型（保留 key/label/required/help/placeholder，其余按新类型重置）。
- * 新增字段的 key 若仍由类型自动生成，会随新类型重算，例如 text → number 得到 `number`；
- * 已按显示名同步过或手动改过的 key 保持不变。
+ * 切换字段类型（保留 required/help/placeholder，其余按新类型重置）。
+ * 显示名与 key 若仍由类型自动生成（用户没有手动改过），会一起随新类型更新，
+ * 例如 text → number 得到「数字」/ `number`；手动填写过的显示名或 key 保持不变。
+ * `allowSync` 仅控制 key：编辑既有模板时 key 不可变，但默认显示名仍可跟随类型。
  */
 export function changeFieldType(
   field: FieldDefinition,
@@ -115,10 +122,20 @@ export function changeFieldType(
 ): FieldDefinition {
   const otherKeys = options.otherKeys ?? [];
   const allowSync = options.allowSync ?? true;
-  const key = allowSync && isTypeDerivedKey(field, otherKeys) ? uniqueFieldKey(type, otherKeys) : field.key;
+  const labelIsAuto = isTypeDerivedLabel(field);
+  const label = labelIsAuto ? FIELD_TYPE_META[type].label : field.label;
+
+  const labelBase = field.label.trim() === '' ? field.type : field.label;
+  const keyIsAuto =
+    isTypeDerivedKey(field, otherKeys) || field.key === uniqueFieldKey(labelBase, otherKeys);
+  const key =
+    allowSync && keyIsAuto
+      ? uniqueFieldKey(labelIsAuto ? type : field.label, otherKeys)
+      : field.key;
+
   const next: FieldDefinition = {
     key,
-    label: field.label,
+    label,
     type,
     required: field.required,
   };

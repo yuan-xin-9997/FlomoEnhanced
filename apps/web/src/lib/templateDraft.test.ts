@@ -73,11 +73,19 @@ describe('类型切换与配置清理', () => {
     expect(next.maxLength).toBe(200);
   });
 
-  it('新增字段的 key 仍由类型自动生成时，随类型重算', () => {
+  it('新增字段的显示名与 key 仍由类型自动生成时，随类型重算', () => {
     const text = blankField([], 'text');
-    expect(changeFieldType(text, 'number').key).toBe('number');
-    expect(changeFieldType(text, 'number').label).toBe('单行文本');
+    const number = changeFieldType(text, 'number');
+    expect(number.label).toBe('数字');
+    expect(number.key).toBe('number');
     expect(changeFieldType(blankField([], 'select'), 'text').key).toBe('text');
+  });
+
+  it('手动填写过的显示名不随类型变化', () => {
+    const custom = { key: 'amount', label: '花了多少', type: 'text' } as FieldDefinition;
+    const next = changeFieldType(custom, 'number');
+    expect(next.label).toBe('花了多少');
+    expect(next.key).toBe('amount');
   });
 
   it('重算 key 时避开其它字段已占用的 key', () => {
@@ -96,9 +104,11 @@ describe('类型切换与配置清理', () => {
     expect(changeFieldType(manual, 'number').key).toBe('my_custom_key');
   });
 
-  it('编辑既有模板（allowSync=false）时保留原 key', () => {
+  it('编辑既有模板（allowSync=false）时保留原 key，但默认显示名仍跟随类型', () => {
     const existing = { key: 'text', label: '单行文本', type: 'text' } as FieldDefinition;
-    expect(changeFieldType(existing, 'number', { allowSync: false }).key).toBe('text');
+    const next = changeFieldType(existing, 'number', { allowSync: false });
+    expect(next.key).toBe('text');
+    expect(next.label).toBe('数字');
   });
 
   it('applyTypeDefaults 不会覆盖已填的 min/max', () => {

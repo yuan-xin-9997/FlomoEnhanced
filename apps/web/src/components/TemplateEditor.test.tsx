@@ -48,12 +48,14 @@ describe('TemplateEditor 新建模板', () => {
     expect(keyInput(container).value).not.toBe('text');
   });
 
-  it('切换字段类型时机器名 key 跟随变化', () => {
+  it('切换字段类型时显示名与机器名 key 一起跟随变化', () => {
     const container = renderEditor();
+    expect(displayNameInput(container).value).toBe('单行文本');
     expect(keyInput(container).value).toBe('text');
 
     fireEvent.change(fieldTypeSelect(container), { target: { value: 'number' } });
 
+    expect(displayNameInput(container).value).toBe('数字');
     expect(keyInput(container).value).toBe('number');
   });
 });
