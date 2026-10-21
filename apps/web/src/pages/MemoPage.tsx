@@ -500,6 +500,7 @@ export default function MemoPage(): JSX.Element {
             ) : (
               <MemoTextEditor
                 id="composer-text-fields"
+                fields={composerTemplate.fields}
                 value={textDraft}
                 onChange={onComposerTextChange}
                 onPasteText={onComposerTextPaste}

@@ -5,10 +5,12 @@
  * - 手工输入只更新文本，由切换回模板模式 / 保存时再解析。
  */
 import { useRef } from 'react';
-import type { MemoTextLineError } from '@flomo/shared';
+import { FIELD_TYPE_META } from '@flomo/shared';
+import type { FieldDefinition, MemoTextLineError } from '@flomo/shared';
 
 export interface MemoTextEditorProps {
   id: string;
+  fields: readonly FieldDefinition[];
   value: string;
   onChange: (value: string) => void;
   onPasteText: (value: string) => void;
@@ -20,10 +22,9 @@ export interface MemoTextEditorProps {
   placeholder?: string;
 }
 
-const DEFAULT_PLACEHOLDER = '每行一个字段，例如：\n日期：2026-10-19\n金额：35.5\n备注：第一行\n第二行';
-
 export default function MemoTextEditor({
   id,
+  fields,
   value,
   onChange,
   onPasteText,
@@ -31,9 +32,15 @@ export default function MemoTextEditor({
   fieldErrors,
   notice = '',
   rows = 6,
-  placeholder = DEFAULT_PLACEHOLDER,
+  placeholder,
 }: MemoTextEditorProps): JSX.Element {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const fieldPlaceholder = ['每行一个字段：', ...fields.map((field) => {
+    const label = field.label.trim() || field.key;
+    const token = fields.some((other) => other !== field &&
+      ((other.label.trim() || other.key) === label || other.key === label)) ? field.key : label;
+    return `${token}：${field.placeholder?.trim() || `请输入${FIELD_TYPE_META[field.type].label}`}`;
+  })].join('\n');
 
   const onPaste = (event: React.ClipboardEvent<HTMLTextAreaElement>): void => {
     const pasted = event.clipboardData.getData('text');
@@ -69,7 +76,7 @@ export default function MemoTextEditor({
         className={messages.length > 0 ? 'textarea memo-text-input input-error' : 'textarea memo-text-input'}
         value={value}
         rows={rows}
-        placeholder={placeholder}
+        placeholder={placeholder ?? fieldPlaceholder}
         onChange={(event) => onChange(event.target.value)}
         onPaste={onPaste}
         aria-describedby={`${id}-hint`}

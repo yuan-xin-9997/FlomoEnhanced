@@ -286,6 +286,7 @@ export default function MemoEditModal({ memo, templates, onClose, onSaved }: Mem
           ) : (
             <MemoTextEditor
               id="memo-edit-text-fields"
+              fields={fields}
               value={textDraft}
               onChange={onTextChange}
               onPasteText={onTextPaste}

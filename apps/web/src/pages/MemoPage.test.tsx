@@ -21,7 +21,12 @@ vi.mock('../api/client', () => {
     archivedAt: null,
   };
   return {
-    templatesApi: { list: vi.fn(async () => ({ items: [template], total: 1 })) },
+    templatesApi: { list: vi.fn(async () => ({ items: [template, {
+      ...template,
+      id: 't2',
+      name: '阅读记录',
+      fields: [{ key: 'book', label: '书名', type: 'text', placeholder: '输入正在读的书' }],
+    }], total: 2 })) },
     memosApi: {
       list: vi.fn(async () => ({ items: [], nextCursor: null, total: 0 })),
       create: vi.fn(),
@@ -63,5 +68,13 @@ describe('MemoPage 撰写区', () => {
       expect(container.querySelector('.composer-fields-primary #composer-text-fields')).not.toBeNull(),
     );
     expect(container.querySelector('#composer-content')).toBeNull();
+    const textInput = container.querySelector<HTMLTextAreaElement>('#composer-text-fields')!;
+    expect(textInput.placeholder).toBe('每行一个字段：\n日期：请输入日期\n睡眠情况：请输入多行文本');
+    expect(textInput.value).toBe('');
+
+    fireEvent.change(templateSelect, { target: { value: 't2' } });
+    fireEvent.click(screen.getByRole('tab', { name: '文本模式' }));
+    await waitFor(() => expect(container.querySelector<HTMLTextAreaElement>('#composer-text-fields')?.placeholder)
+      .toBe('每行一个字段：\n书名：输入正在读的书'));
   });
 });
