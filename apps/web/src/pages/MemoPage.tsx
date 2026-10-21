@@ -75,6 +75,7 @@ export default function MemoPage(): JSX.Element {
   const [composerTemplateId, setComposerTemplateId] = useState('');
   const [content, setContent] = useState('');
   const [draft, setDraft] = useState<Record<string, FieldValue>>({});
+  const [draftChanged, setDraftChanged] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [composerMode, setComposerMode] = useState<ComposerMode>('template');
   const [textDraft, setTextDraft] = useState('');
@@ -166,6 +167,7 @@ export default function MemoPage(): JSX.Element {
     setContent('');
     const nextDraft = composerTemplate === undefined ? {} : emptyDraft(composerTemplate.fields);
     setDraft(nextDraft);
+    setDraftChanged(false);
     setFieldErrors({});
     setComposerMode('template');
     setTextLineErrors([]);
@@ -212,6 +214,7 @@ export default function MemoPage(): JSX.Element {
     if (composerTemplate === undefined) return null;
     const parsed = parseMemoTextDraft(composerTemplate.fields, text);
     setDraft(parsed.draft);
+    setDraftChanged(false);
     setFieldErrors(parsed.errors);
     setTextLineErrors(parsed.lineErrors);
     setTextNotice(parsed.ok ? `已识别 ${parsed.matchedCount} 个字段` : '');
@@ -240,9 +243,11 @@ export default function MemoPage(): JSX.Element {
   const onComposerModeChange = (next: ComposerMode): void => {
     if (next === effectiveComposerMode) return;
     if (next === 'text') {
-      if (composerTemplate !== undefined && !textNeedsCorrection) {
+      // 单纯切换保留原文；只有用户改过模板字段才需要重新生成。
+      if (composerTemplate !== undefined && draftChanged && !textNeedsCorrection) {
         setTextDraft(formatMemoText(composerTemplate.fields, draft));
       }
+      setDraftChanged(false);
       if (!textNeedsCorrection) {
         setTextLineErrors([]);
         setFieldErrors({});
@@ -317,6 +322,7 @@ export default function MemoPage(): JSX.Element {
       const nextDraft = composerTemplate === undefined ? {} : emptyDraft(composerTemplate.fields);
       setContent('');
       setDraft(nextDraft);
+      setDraftChanged(false);
       setFieldErrors({});
       setTextLineErrors([]);
       setTextNotice('');
@@ -500,6 +506,7 @@ export default function MemoPage(): JSX.Element {
                   idPrefix="composer"
                   onChange={(key, value) => {
                     setDraft((previous) => ({ ...previous, [key]: value }));
+                    setDraftChanged(true);
                     setFieldErrors((previous) => {
                       if (previous[key] === undefined) return previous;
                       const next = { ...previous };

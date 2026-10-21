@@ -27,7 +27,12 @@ vi.mock('../api/client', () => {
       id: 't2',
       name: '阅读记录',
       fields: [{ key: 'book', label: '书名', type: 'text', placeholder: '输入正在读的书' }],
-    }], total: 2 })) },
+    }, {
+      ...template,
+      id: 't3',
+      name: '评分记录',
+      fields: [{ key: 'score', label: '评分', type: 'rating' }],
+    }], total: 3 })) },
     memosApi: {
       list: vi.fn(async () => ({ items: [], nextCursor: null, total: 0 })),
       create: vi.fn(),
@@ -53,6 +58,24 @@ afterEach(() => {
 
 describe('MemoPage 撰写区', () => {
   it.each([
+    ['t1', '\n日期 = 2026-10-21\n\n睡眠情况: 第一行\n第二行\n\n'],
+    ['t3', '评分：4 星，今天精神很好'],
+  ])('解析成功也保留完整原文，单纯切换不重新生成文本：%s', async (templateId, original) => {
+    const { container } = render(<MemoryRouter><MemoPage /></MemoryRouter>);
+    const templateSelect = await screen.findByLabelText('模板', { selector: 'select' });
+    fireEvent.change(templateSelect, { target: { value: templateId } });
+    fireEvent.click(screen.getByRole('tab', { name: '文本模式' }));
+    fireEvent.change(container.querySelector('#composer-text-fields')!, { target: { value: original } });
+
+    for (let round = 0; round < 2; round += 1) {
+      fireEvent.click(screen.getByRole('tab', { name: '模板模式' }));
+      fireEvent.click(screen.getByRole('tab', { name: '文本模式' }));
+      expect(container.querySelector<HTMLTextAreaElement>('#composer-text-fields')!.value).toBe(original);
+    }
+  });
+
+  it.each([
+    ['哈哈哈哈：哈哈哈哈哈', ''],
     ['未知字段：保留这段原文\n日期：2026-10-21', '2026-10-21'],
     ['日期：这不是日期', ''],
     ['完全无法识别的内容', ''],
@@ -61,7 +84,9 @@ describe('MemoPage 撰写区', () => {
     const templateSelect = await screen.findByLabelText('模板', { selector: 'select' });
     fireEvent.change(templateSelect, { target: { value: 't1' } });
     fireEvent.click(screen.getByRole('tab', { name: '文本模式' }));
-    fireEvent.change(container.querySelector('#composer-text-fields')!, { target: { value: original } });
+    fireEvent.paste(container.querySelector('#composer-text-fields')!, {
+      clipboardData: { getData: () => original },
+    });
 
     for (let round = 0; round < 2; round += 1) {
       fireEvent.click(screen.getByRole('tab', { name: '模板模式' }));

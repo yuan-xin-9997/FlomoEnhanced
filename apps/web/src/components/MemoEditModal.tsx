@@ -57,6 +57,7 @@ export default function MemoEditModal({ memo, templates, onClose, onSaved }: Mem
   const [content, setContent] = useState(memo.content);
   const [templateId, setTemplateId] = useState(initialId);
   const [draft, setDraft] = useState<Record<string, FieldValue>>(initialDraft);
+  const [draftChanged, setDraftChanged] = useState(false);
   const [mode, setMode] = useState<EditMode>('template');
   const [textDraft, setTextDraft] = useState(() =>
     initialFields === null ? '' : formatMemoText(initialFields, initialDraft),
@@ -64,6 +65,7 @@ export default function MemoEditModal({ memo, templates, onClose, onSaved }: Mem
   const [textLineErrors, setTextLineErrors] = useState<MemoTextLineError[]>([]);
   const [textNotice, setTextNotice] = useState('');
   const [textWarning, setTextWarning] = useState('');
+  const [textNeedsCorrection, setTextNeedsCorrection] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [formError, setFormError] = useState('');
   const [saving, setSaving] = useState(false);
@@ -78,9 +80,11 @@ export default function MemoEditModal({ memo, templates, onClose, onSaved }: Mem
     if (fields === null) return null;
     const parsed = parseMemoTextDraft(fields, text);
     setDraft(parsed.draft);
+    setDraftChanged(false);
     setErrors(parsed.errors);
     setTextLineErrors(parsed.lineErrors);
     setTextNotice(parsed.ok ? `已识别 ${parsed.matchedCount} 个字段` : '');
+    setTextNeedsCorrection(!parsed.ok);
     setTextWarning('');
     setFormError('');
     return parsed;
@@ -105,11 +109,15 @@ export default function MemoEditModal({ memo, templates, onClose, onSaved }: Mem
   const onModeChange = (next: EditMode): void => {
     if (next === effectiveMode) return;
     if (next === 'text') {
-      if (fields !== null) setTextDraft(formatMemoText(fields, draft));
-      setTextLineErrors([]);
+      // 单纯切换保留原文；只有用户改过模板字段才需要重新生成。
+      if (fields !== null && draftChanged && !textNeedsCorrection) setTextDraft(formatMemoText(fields, draft));
+      setDraftChanged(false);
+      if (!textNeedsCorrection) {
+        setTextLineErrors([]);
+        setErrors({});
+      }
       setTextNotice('');
       setTextWarning('');
-      setErrors({});
       setFormError('');
       setMode('text');
       return;
@@ -118,8 +126,8 @@ export default function MemoEditModal({ memo, templates, onClose, onSaved }: Mem
     // 文本 → 模板：重新解析当前文本，让手动修改也生效
     if (fields !== null) {
       const parsed = applyText(textDraft);
-      if (parsed !== null && parsed.lineErrors.length > 0) {
-        setTextWarning(`文本中有 ${parsed.lineErrors.length} 行无法识别，已忽略；当前以模板字段为准。`);
+      if (parsed !== null && !parsed.ok) {
+        setTextWarning('文本中有无法识别或校验未通过的内容，原文已保留。请切回文本模式修正后再编辑模板字段或保存。');
       }
     }
     setMode('template');
@@ -127,6 +135,8 @@ export default function MemoEditModal({ memo, templates, onClose, onSaved }: Mem
 
   const onTemplateChange = (nextId: string): void => {
     setTemplateId(nextId);
+    setDraftChanged(false);
+    setTextNeedsCorrection(false);
     setErrors({});
     setTextLineErrors([]);
     setTextNotice('');
@@ -158,6 +168,10 @@ export default function MemoEditModal({ memo, templates, onClose, onSaved }: Mem
         }
         values = parsed.values;
       } else {
+        if (textNeedsCorrection) {
+          setFormError('文本中有无法识别或校验未通过的内容，请切回文本模式修正后再保存');
+          return;
+        }
         const normalized = normalizeDraft(fields, draft);
         if (!normalized.ok) {
           setErrors(normalized.errors);
@@ -268,21 +282,24 @@ export default function MemoEditModal({ memo, templates, onClose, onSaved }: Mem
           )}
 
           {effectiveMode === 'template' ? (
-            <FieldForm
-              fields={fields}
-              values={draft}
-              errors={errors}
-              idPrefix="memo-edit"
-              onChange={(key, value) => {
-                setDraft((previous) => ({ ...previous, [key]: value }));
-                setErrors((previous) => {
-                  if (previous[key] === undefined) return previous;
-                  const next = { ...previous };
-                  delete next[key];
-                  return next;
-                });
-              }}
-            />
+            <fieldset disabled={textNeedsCorrection} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
+              <FieldForm
+                fields={fields}
+                values={draft}
+                errors={errors}
+                idPrefix="memo-edit"
+                onChange={(key, value) => {
+                  setDraft((previous) => ({ ...previous, [key]: value }));
+                  setDraftChanged(true);
+                  setErrors((previous) => {
+                    if (previous[key] === undefined) return previous;
+                    const next = { ...previous };
+                    delete next[key];
+                    return next;
+                  });
+                }}
+              />
+            </fieldset>
           ) : (
             <MemoTextEditor
               id="memo-edit-text-fields"
