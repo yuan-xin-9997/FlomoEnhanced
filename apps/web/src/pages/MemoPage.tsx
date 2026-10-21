@@ -81,6 +81,7 @@ export default function MemoPage(): JSX.Element {
   const [textLineErrors, setTextLineErrors] = useState<MemoTextLineError[]>([]);
   const [textNotice, setTextNotice] = useState('');
   const [textWarning, setTextWarning] = useState('');
+  const [textNeedsCorrection, setTextNeedsCorrection] = useState(false);
   const [formError, setFormError] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
@@ -171,6 +172,7 @@ export default function MemoPage(): JSX.Element {
     setTextNotice('');
     setTextWarning('');
     setTextDraft(composerTemplate === undefined ? '' : formatMemoText(composerTemplate.fields, nextDraft));
+    setTextNeedsCorrection(false);
   }, [composerTemplate]);
 
   // Ctrl / Cmd + K 聚焦搜索框
@@ -213,6 +215,7 @@ export default function MemoPage(): JSX.Element {
     setFieldErrors(parsed.errors);
     setTextLineErrors(parsed.lineErrors);
     setTextNotice(parsed.ok ? `已识别 ${parsed.matchedCount} 个字段` : '');
+    setTextNeedsCorrection(!parsed.ok);
     setTextWarning('');
     setFormError('');
     return parsed;
@@ -237,13 +240,15 @@ export default function MemoPage(): JSX.Element {
   const onComposerModeChange = (next: ComposerMode): void => {
     if (next === effectiveComposerMode) return;
     if (next === 'text') {
-      if (composerTemplate !== undefined) {
+      if (composerTemplate !== undefined && !textNeedsCorrection) {
         setTextDraft(formatMemoText(composerTemplate.fields, draft));
       }
-      setTextLineErrors([]);
+      if (!textNeedsCorrection) {
+        setTextLineErrors([]);
+        setFieldErrors({});
+      }
       setTextNotice('');
       setTextWarning('');
-      setFieldErrors({});
       setFormError('');
       setComposerMode('text');
       return;
@@ -252,8 +257,8 @@ export default function MemoPage(): JSX.Element {
     // 文本 → 模板：重新解析当前文本，让手动修改也生效
     if (composerTemplate !== undefined) {
       const parsed = applyComposerText(textDraft);
-      if (parsed !== null && parsed.lineErrors.length > 0) {
-        setTextWarning(`文本中有 ${parsed.lineErrors.length} 行无法识别，已忽略；当前以模板字段为准。`);
+      if (parsed !== null && !parsed.ok) {
+        setTextWarning('文本中有无法识别或校验未通过的内容，原文已保留。请切回文本模式修正后再编辑模板字段或保存。');
       }
     }
     setComposerMode('template');
@@ -261,11 +266,11 @@ export default function MemoPage(): JSX.Element {
 
   const canSubmit = useMemo(() => {
     if (content.trim() !== '') return true;
-    if (composerTemplate !== undefined && effectiveComposerMode === 'text') {
+    if (composerTemplate !== undefined && (effectiveComposerMode === 'text' || textNeedsCorrection)) {
       return textDraft.trim() !== '';
     }
     return composerTemplate !== undefined && !isDraftEmpty(draft);
-  }, [content, composerTemplate, effectiveComposerMode, textDraft, draft]);
+  }, [content, composerTemplate, effectiveComposerMode, textNeedsCorrection, textDraft, draft]);
 
   const onSubmit = async (): Promise<void> => {
     const trimmed = content.trim();
@@ -280,6 +285,10 @@ export default function MemoPage(): JSX.Element {
         }
         values = parsed.values;
       } else {
+        if (textNeedsCorrection) {
+          setFormError('文本中有无法识别或校验未通过的内容，请切回文本模式修正后再保存');
+          return;
+        }
         const normalized = normalizeDraft(composerTemplate.fields, draft);
         if (!normalized.ok) {
           setFieldErrors(normalized.errors);
@@ -312,6 +321,7 @@ export default function MemoPage(): JSX.Element {
       setTextLineErrors([]);
       setTextNotice('');
       setTextWarning('');
+      setTextNeedsCorrection(false);
       setTextDraft(composerTemplate === undefined ? '' : formatMemoText(composerTemplate.fields, nextDraft));
       toast.success('已记录');
       cursorRef.current = null;
@@ -482,21 +492,23 @@ export default function MemoPage(): JSX.Element {
               </div>
             )}
             {effectiveComposerMode === 'template' ? (
-              <FieldForm
-                fields={composerTemplate.fields}
-                values={draft}
-                errors={fieldErrors}
-                idPrefix="composer"
-                onChange={(key, value) => {
-                  setDraft((previous) => ({ ...previous, [key]: value }));
-                  setFieldErrors((previous) => {
-                    if (previous[key] === undefined) return previous;
-                    const next = { ...previous };
-                    delete next[key];
-                    return next;
-                  });
-                }}
-              />
+              <fieldset disabled={textNeedsCorrection} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
+                <FieldForm
+                  fields={composerTemplate.fields}
+                  values={draft}
+                  errors={fieldErrors}
+                  idPrefix="composer"
+                  onChange={(key, value) => {
+                    setDraft((previous) => ({ ...previous, [key]: value }));
+                    setFieldErrors((previous) => {
+                      if (previous[key] === undefined) return previous;
+                      const next = { ...previous };
+                      delete next[key];
+                      return next;
+                    });
+                  }}
+                />
+              </fieldset>
             ) : (
               <MemoTextEditor
                 id="composer-text-fields"
