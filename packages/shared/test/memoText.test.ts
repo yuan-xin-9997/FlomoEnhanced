@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import type { FieldDefinition } from '../src/index.ts';
-import { defaultMemoTextDraftValue, formatMemoText, parseMemoText } from '../src/index.ts';
+import { defaultMemoTextDraftValue, formatFieldValue, formatMemoText, parseMemoText } from '../src/index.ts';
 
 const FIELDS: FieldDefinition[] = [
   { key: 'title', label: '标题', type: 'text' },
@@ -57,9 +57,9 @@ describe('formatMemoText', () => {
     assert.equal(lines[1], '备注：第一行');
     assert.equal(lines[2], '第二行');
     assert.equal(lines[3], '第三行');
-    assert.ok(text.includes('数量：12.50'));
-    assert.ok(text.includes('金额：¥1,234.50'));
-    assert.ok(text.includes('完成度：66.60%'));
+    assert.ok(text.includes('数量：12.5'));
+    assert.ok(text.includes('金额：1234.5'));
+    assert.ok(text.includes('完成度：66.6'));
     assert.ok(text.includes('评分：4 / 5'));
     assert.ok(text.includes('日期：2026-10-19'));
     assert.ok(text.includes('时间：2026-10-19T02:30:00.000Z'));
@@ -77,7 +77,7 @@ describe('formatMemoText', () => {
       { key: 'm', label: '多选', type: 'multiselect', options: [{ value: 'a', label: 'A' }] },
     ];
     const text = formatMemoText(fields, { n: 0, b: false, t: '', m: [] });
-    assert.equal(text, '数字：0.00\n开关：否');
+    assert.equal(text, '数字：0\n开关：否');
   });
 
   it('字段名重复时改用 key，保证可解析', () => {
@@ -87,6 +87,111 @@ describe('formatMemoText', () => {
     ];
     const text = formatMemoText(fields, { a: '甲', b: '乙' });
     assert.equal(text, 'a：甲\nb：乙');
+  });
+
+  it('数值精度只影响展示，文本模式往返保留原始数值和输入中的小数', () => {
+    for (const type of ['number', 'currency', 'percent'] as const) {
+      const fields: FieldDefinition[] = [{ key: 'n', label: '数值', type, precision: 0 }];
+      for (const value of [1.23456789, 0.000000001, 0, 99.99999999]) {
+        const text = formatMemoText(fields, { n: value });
+        const parsed = parseMemoText(fields, text);
+        assert.equal(parsed.ok, true, JSON.stringify(parsed));
+        assert.equal(Number(parsed.draft.n), value, `${type}: ${text}`);
+      }
+      const draftText = formatMemoText(fields, { n: '1.23456789' });
+      assert.equal(parseMemoText(fields, draftText).draft.n, '1.23456789');
+    }
+  });
+
+  it('字段显示名与其它字段的 key 冲突时使用自身 key', () => {
+    const fields: FieldDefinition[] = [
+      { key: 'first', label: 'second', type: 'text' },
+      { key: 'second', label: '第二项', type: 'text' },
+      { key: 'third', label: '第三\n项', type: 'text' },
+    ];
+    const values = { first: '甲', second: '乙', third: '丙' };
+    const text = formatMemoText(fields, values);
+    assert.equal(text, 'first：甲\n第二项：乙\nthird：丙');
+    assert.deepEqual(parseMemoText(fields, text).draft, values);
+  });
+
+  it('长文本中的字段名/字段 key 不会变成其它字段或重复字段行', () => {
+    const fields: FieldDefinition[] = [
+      { key: 'note', label: '备注', type: 'longtext' },
+      { key: 'title', label: '标题', type: 'text' },
+    ];
+    for (const note of ['第一行\n标题：这是备注', '第一行\n title=这是备注', '第一行\n备注：这是续行']) {
+      const values = { note, title: '真实标题' };
+      const text = formatMemoText(fields, values);
+      assert.equal(text.split('\n').length, 2, text);
+      const parsed = parseMemoText(fields, text);
+      assert.equal(parsed.ok, true, JSON.stringify(parsed));
+      assert.deepEqual(parsed.draft, values);
+    }
+  });
+
+  it('单行文本中的换行，以及带双引号或 CRLF 的文本用 JSON 保留', () => {
+    for (const type of ['text', 'longtext'] as const) {
+      const fields: FieldDefinition[] = [{ key: 't', label: '文本', type }];
+      for (const value of ['"不是 JSON', '"原文引号"', '第一行\r\n第二行', '第一行\n第二行']) {
+        const parsed = parseMemoText(fields, formatMemoText(fields, { t: value }));
+        assert.equal(parsed.ok, true, JSON.stringify(parsed));
+        assert.equal(parsed.draft.t, value);
+      }
+    }
+  });
+
+  it('单选/多选遇到重复显示名或显示名与其它 value 冲突时保留选项值', () => {
+    const options = [
+      { value: 'a', label: '重复' },
+      { value: 'b', label: '重复' },
+      { value: 'c', label: 'd' },
+      { value: 'd', label: '另一个选项' },
+    ];
+    const fields: FieldDefinition[] = [
+      { key: 'single', label: '单选', type: 'select', options },
+      { key: 'multi', label: '多选', type: 'multiselect', options },
+    ];
+    for (const single of ['a', 'b', 'c', 'd']) {
+      const values = { single, multi: ['b', 'c', 'd'] };
+      const parsed = parseMemoText(fields, formatMemoText(fields, values));
+      assert.equal(parsed.ok, true, JSON.stringify(parsed));
+      assert.deepEqual(parsed.draft, values);
+    }
+    const ambiguous = parseMemoText(fields, '单选：重复\n多选：重复');
+    assert.equal(ambiguous.ok, false);
+    assert.match(ambiguous.errors.single ?? '', /歧义/);
+    assert.match(ambiguous.errors.multi ?? '', /歧义/);
+  });
+
+  it('选项 value 含分隔符、换行或 JSON 标记时用 JSON 无损往返', () => {
+    for (const value of ['a,b', 'a、b', 'a|b', 'a\nb', '["a"]', '"a"']) {
+      const options = [
+        { value, label: '重复' },
+        { value: 'other', label: '重复' },
+      ];
+      const fields: FieldDefinition[] = [
+        { key: 'single', label: '单选', type: 'select', options },
+        { key: 'multi', label: '多选', type: 'multiselect', options },
+      ];
+      const values = { single: value, multi: [value, 'other'] };
+      const text = formatMemoText(fields, values);
+      assert.equal(text.split('\n').length, 2, text);
+      const parsed = parseMemoText(fields, text);
+      assert.equal(parsed.ok, true, JSON.stringify(parsed));
+      assert.deepEqual(parsed.draft, values);
+    }
+  });
+
+  it('显示名含分隔符、换行或 JSON 标记时回退安全的原始值', () => {
+    for (const label of ['甲,乙', '甲\n乙', '"甲"', '["甲"]']) {
+      const fields: FieldDefinition[] = [
+        { key: 'multi', label: '多选', type: 'multiselect', options: [{ value: 'a', label }] },
+      ];
+      const parsed = parseMemoText(fields, formatMemoText(fields, { multi: ['a'] }));
+      assert.equal(parsed.ok, true, JSON.stringify(parsed));
+      assert.deepEqual(parsed.draft.multi, ['a']);
+    }
   });
 
   it('带币种前缀的展示格式也能解析（US$ / AU$ / CA$ / JP¥）', () => {
@@ -99,7 +204,7 @@ describe('formatMemoText', () => {
       const fields: FieldDefinition[] = [
         { key: 'amount', label: '金额', type: 'currency', currency },
       ];
-      const text = formatMemoText(fields, { amount: value });
+      const text = `金额：${formatFieldValue(fields[0]!, value)}`;
       const parsed = parseMemoText(fields, text);
       assert.equal(parsed.ok, true, `${currency}: ${text} → ${JSON.stringify(parsed)}`);
       assert.equal(parsed.draft.amount, String(value));

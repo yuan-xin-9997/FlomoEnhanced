@@ -469,6 +469,42 @@ describe('登录限流（同一 IP / 用户名 15 分钟内失败 ≥10 次）',
     }
   });
 
+  it('伪造 X-Forwarded-For 不能绕过真实 IP 的失败次数限制', async () => {
+    const fresh = await createTestContext();
+    try {
+      for (let attempt = 0; attempt < 11; attempt += 1) {
+        const response = await fresh.app.inject({
+          method: 'POST',
+          url: '/api/auth/login',
+          remoteAddress: '203.0.113.10',
+          headers: { ...jsonHeaders(), 'x-forwarded-for': `198.51.100.${attempt + 1}` },
+          payload: { username: `spray-user-${attempt}`, password: WRONG_PASSWORD },
+        });
+        assert.equal(response.statusCode, attempt < 10 ? 401 : 429, `第 ${attempt + 1} 次尝试`);
+      }
+    } finally {
+      await fresh.close();
+    }
+  });
+
+  it('更换真实 IP 后，同一用户名仍受限流（忽略大小写）', async () => {
+    const fresh = await createTestContext();
+    try {
+      for (let attempt = 0; attempt < 11; attempt += 1) {
+        const response = await fresh.app.inject({
+          method: 'POST',
+          url: '/api/auth/login',
+          remoteAddress: `203.0.113.${attempt + 1}`,
+          headers: jsonHeaders(),
+          payload: { username: attempt % 2 === 0 ? 'same-user' : 'SAME-USER', password: WRONG_PASSWORD },
+        });
+        assert.equal(response.statusCode, attempt < 10 ? 401 : 429, `第 ${attempt + 1} 次尝试`);
+      }
+    } finally {
+      await fresh.close();
+    }
+  });
+
   it('限流器单元：滑动窗口过期后重新允许，且支持惰性清理', () => {
     let nowMs = 1_000_000;
     const limiter = createRateLimiter({ windowMs: 1_000, maxFailures: 2, now: () => nowMs });

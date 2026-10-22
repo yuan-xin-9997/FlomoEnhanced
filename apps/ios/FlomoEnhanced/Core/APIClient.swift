@@ -72,11 +72,16 @@ struct APIClient: Sendable {
         let response: URLResponse
         do {
             (data, response) = try await Self.urlSession.data(for: urlRequest)
+        } catch is CancellationError {
+            throw CancellationError()
         } catch let error as URLError {
+            if error.code == .cancelled { throw error }
             throw Self.networkError(error)
         } catch {
+            try Task.checkCancellation()
             throw APIError.network()
         }
+        try Task.checkCancellation()
         guard let http = response as? HTTPURLResponse else { throw APIError.network() }
         guard (200..<300).contains(http.statusCode) else {
             throw Self.errorBody(data: data, status: http.statusCode)
@@ -132,11 +137,16 @@ struct APIClient: Sendable {
         let response: URLResponse
         do {
             (data, response) = try await Self.urlSession.data(for: urlRequest)
+        } catch is CancellationError {
+            throw CancellationError()
         } catch let error as URLError {
+            if error.code == .cancelled { throw error }
             throw Self.networkError(error)
         } catch {
+            try Task.checkCancellation()
             throw APIError.network()
         }
+        try Task.checkCancellation()
         guard let http = response as? HTTPURLResponse else { throw APIError.network() }
         guard (200..<300).contains(http.statusCode) else {
             throw Self.errorBody(data: data, status: http.statusCode)
@@ -273,6 +283,12 @@ extension APIClient {
     }
 
     func logout() async throws {
+        defer {
+            let url = baseURL.appendingPathComponent("api/auth/logout")
+            for cookie in HTTPCookieStorage.shared.cookies(for: url) ?? [] where cookie.name == "flomo_session" {
+                HTTPCookieStorage.shared.deleteCookie(cookie)
+            }
+        }
         try await sendVoid("POST", "api/auth/logout")
     }
 

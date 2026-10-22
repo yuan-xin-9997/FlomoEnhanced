@@ -48,6 +48,7 @@ struct MemoEditorView: View {
     /// `""` = 不使用模板
     @State private var templateSelection: String
     @State private var fieldDraft: [String: FieldValue] = [:]
+    @State private var fieldDraftChanged = false
     /// 切换模板时缓存各模板的草稿，切回来不丢失输入
     @State private var draftCache: [String: [String: FieldValue]] = [:]
     @State private var fieldErrors: [String: String] = [:]
@@ -57,6 +58,7 @@ struct MemoEditorView: View {
     @State private var textLineErrors: [MemoTextLineError] = []
     @State private var textNotice = ""
     @State private var textWarning = ""
+    @State private var textNeedsCorrection = false
     @State private var formError = ""
     @State private var isSaving = false
     @State private var isDeleting = false
@@ -283,7 +285,8 @@ struct MemoEditorView: View {
                 }
 
                 if effectiveFieldMode == .template {
-                    MemoFieldFormView(fields: fields, draft: $fieldDraft, errors: fieldErrors)
+                    MemoFieldFormView(fields: fields, draft: fieldDraftBinding, errors: fieldErrors)
+                        .disabled(textNeedsCorrection)
                 } else {
                     MemoTextEditorView(
                         text: textBinding,
@@ -400,6 +403,16 @@ struct MemoEditorView: View {
         )
     }
 
+    private var fieldDraftBinding: Binding<[String: FieldValue]> {
+        Binding(
+            get: { fieldDraft },
+            set: {
+                fieldDraft = $0
+                fieldDraftChanged = true
+            }
+        )
+    }
+
     private var isTemplateChanged: Bool {
         guard let memo else { return false }
         return templateSelection != (memo.templateId ?? "")
@@ -432,7 +445,7 @@ struct MemoEditorView: View {
     private var canSave: Bool {
         if isSaving || isDeleting { return false }
         if !trimmedContent.isEmpty { return true }
-        if effectiveFieldMode == .text {
+        if effectiveFieldMode == .text || textNeedsCorrection {
             return !textDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         }
         if !isDraftEmpty { return true }
@@ -488,6 +501,8 @@ struct MemoEditorView: View {
         draftPrepared = true
         draftCache[templateSelection] = fieldDraft
         templateSelection = newValue
+        fieldDraftChanged = false
+        textNeedsCorrection = false
         fieldErrors = [:]
         fieldMode = .template
         textLineErrors = []
@@ -523,6 +538,8 @@ struct MemoEditorView: View {
         guard let fields = selectedFields else { return nil }
         let result = MemoTextDraft.parse(fields: fields, text: text)
         fieldDraft = result.draft
+        fieldDraftChanged = false
+        textNeedsCorrection = !result.ok
         fieldErrors = result.errors
         textLineErrors = result.lineErrors
         textNotice = result.ok ? "已识别 \(result.matchedCount) 个字段" : ""
@@ -550,23 +567,26 @@ struct MemoEditorView: View {
     private func changeFieldMode(_ next: MemoFieldMode) {
         guard next != effectiveFieldMode else { return }
         if next == .text {
-            if let fields = selectedFields {
+            if let fields = selectedFields, fieldDraftChanged, !textNeedsCorrection {
                 textDraft = MemoTextCodec.format(fields: fields, values: fieldDraft)
             }
-            textLineErrors = []
+            fieldDraftChanged = false
+            if !textNeedsCorrection {
+                textLineErrors = []
+                fieldErrors = [:]
+            }
             textNotice = ""
             textWarning = ""
-            fieldErrors = [:]
             formError = ""
             fieldMode = .text
             return
         }
 
         // 文本 → 模板：重新解析当前文本，让手动修改也生效
-        if let fields = selectedFields {
+        if selectedFields != nil {
             let parsed = applyText(textDraft)
-            if let parsed, !parsed.lineErrors.isEmpty {
-                textWarning = "文本中有 \(parsed.lineErrors.count) 行无法识别，已忽略；当前以模板字段为准。"
+            if let parsed, !parsed.ok {
+                textWarning = "文本中有无法识别或校验未通过的内容，原文已保留。请切回文本模式修正后再编辑模板字段或保存。"
             }
         }
         fieldMode = .template
@@ -591,6 +611,10 @@ struct MemoEditorView: View {
                 errors = parsed.errors
                 values = parsed.values
             } else {
+                guard !textNeedsCorrection else {
+                    formError = "文本中有无法识别或校验未通过的内容，请切回文本模式修正后再保存"
+                    return
+                }
                 let result = MemoFieldDraft.normalize(fields: fields, draft: fieldDraft)
                 errors = result.errors
                 values = result.values

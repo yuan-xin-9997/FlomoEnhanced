@@ -56,6 +56,8 @@
 | `/opt/FlomoEnhanced/.data` | SQLite 数据库目录，属主 `jenkins`，权限 `700`（`rsync` 不会覆盖或删除） |
 | `/opt/FlomoEnhanced/.env` | 运行时配置，权限 `600`，systemd 用 `EnvironmentFile=-/opt/FlomoEnhanced/.env` 读取 |
 | `/opt/FlomoEnhanced/DEPLOYED_COMMIT` | 当前部署的 git 提交 SHA |
+
+数据库放在默认 `.data/` 或部署目录外。若 `FLOMO_DATA_DIR` / `FLOMO_DB_FILE` 指向部署目录内其它位置，部署脚本会在停服前拒绝继续，避免 `rsync --delete` 删除数据库；请先迁移数据并更新配置。
 | `/opt/FlomoEnhanced/apps/api/dist/index.js` | 服务入口（`npm run build` 产物，启动命令 `node .../apps/api/dist/index.js`） |
 | `/etc/systemd/system/flomoenhanced.service` | systemd 单元文件 |
 | `/etc/sudoers.d/flomoenhanced-deploy` | 仅限本服务的 `systemctl stop/start` 免密授权 |

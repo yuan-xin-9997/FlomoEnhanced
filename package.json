@@ -17,7 +17,7 @@
     "pretypecheck": "npm run build:shared",
     "typecheck": "npm run typecheck -w @flomo/shared && npm run typecheck -w @flomo/web && npm run typecheck -w @flomo/api",
     "pretest": "npm run build:shared",
-    "test": "npm run test -w @flomo/shared && npm run test -w @flomo/web && npm run test -w @flomo/api",
+    "test": "npm run test -w @flomo/shared && npm run test -w @flomo/web && npm run test -w @flomo/api && node --test JenkinsConfig/check-data-path.test.mjs",
     "start": "node --no-warnings=ExperimentalWarning apps/api/dist/index.js",
     "verify:e2e": "node scripts/acceptance-e2e.mjs",
     "dev:api": "npm run dev -w @flomo/api",

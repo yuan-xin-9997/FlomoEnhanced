@@ -26,6 +26,7 @@ import {
   mean,
   median,
   minOf,
+  normalizeFieldValue,
   optionLabelOf,
   percentile,
   rangeOf,
@@ -933,19 +934,22 @@ function buildDateStats(
   granularity: Granularity,
 ): DateStats {
   const isDateTime = def.type === 'datetime';
-  const entries: Array<{ value: string; dayKey: string; hour: number }> = [];
+  const entries: Array<{ value: string; dayKey: string; hour: number; epochMs: number }> = [];
   for (const item of collected) {
-    if (typeof item.value !== 'string' || item.value === '') continue;
+    // 模板可变更字段类型，历史值不一定仍是合法的日期。
+    const normalized = normalizeFieldValue(def, item.value);
+    if (!normalized.ok || typeof normalized.value !== 'string' || normalized.value === '') continue;
+    const value = normalized.value;
     if (isDateTime) {
       let epochMs: number;
       try {
-        epochMs = parseIsoToEpochMs(item.value, tz);
+        epochMs = parseIsoToEpochMs(value, tz);
       } catch {
         continue;
       }
-      entries.push({ value: item.value, dayKey: localDayKeyOf(epochMs, tz), hour: localHourOf(epochMs, tz) });
+      entries.push({ value, dayKey: localDayKeyOf(epochMs, tz), hour: localHourOf(epochMs, tz), epochMs });
     } else {
-      entries.push({ value: item.value, dayKey: item.value, hour: 0 });
+      entries.push({ value, dayKey: value, hour: 0, epochMs: Date.parse(value) });
     }
   }
 
@@ -961,7 +965,7 @@ function buildDateStats(
     return empty;
   }
 
-  entries.sort((a, b) => (a.dayKey < b.dayKey ? -1 : a.dayKey > b.dayKey ? 1 : a.value < b.value ? -1 : a.value > b.value ? 1 : 0));
+  entries.sort((a, b) => a.epochMs - b.epochMs);
   const first = entries[0];
   const last = entries[entries.length - 1];
   const minDayKey = first?.dayKey ?? '';

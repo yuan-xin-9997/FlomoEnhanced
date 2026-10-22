@@ -31,6 +31,41 @@ afterEach(() => {
 });
 
 describe('MemoEditModal 模式切换', () => {
+  it('仅切换模式再保存保留原始数值精度', async () => {
+    const numericTemplate: Template = { ...template, fields: [{ key: 'amount', label: '金额', type: 'number', precision: 2 }] };
+    render(<ToastProvider><MemoEditModal memo={{ ...memo, values: { amount: 1.234567 } }} templates={[numericTemplate]} onClose={() => undefined} onSaved={() => undefined} /></ToastProvider>);
+    fireEvent.click(screen.getByRole('tab', { name: '文本模式' }));
+    expect((screen.getByRole('textbox', { name: '' }) as HTMLTextAreaElement).value).toBe('金额：1.234567');
+    fireEvent.click(screen.getByRole('tab', { name: '模板模式' }));
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+    await waitFor(() => expect(memosApi.update).toHaveBeenCalledWith(memo.id, { content: '', templateId: template.id, values: { amount: 1.234567 } }));
+  });
+
+  it.each([
+    { ...memo, content: '原正文', templateId: null, templateName: null, values: { historical: 123 } },
+    { ...memo, content: '原正文' },
+  ])('模板定义不可用时只提交正文，保留历史字段：$templateId', async (historicalMemo) => {
+    render(<ToastProvider><MemoEditModal memo={historicalMemo} templates={[]} onClose={() => undefined} onSaved={() => undefined} /></ToastProvider>);
+    fireEvent.change(screen.getByLabelText('内容'), { target: { value: '仅修改正文' } });
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+    await waitFor(() => expect(memosApi.update).toHaveBeenCalledWith(memo.id, { content: '仅修改正文' }));
+  });
+
+  it('归档模板只允许修改正文，字段不重新提交', async () => {
+    render(<ToastProvider><MemoEditModal memo={memo} templates={[{ ...template, archivedAt: template.createdAt }]} onClose={() => undefined} onSaved={() => undefined} /></ToastProvider>);
+    expect(screen.queryByLabelText('日期')).toBeNull();
+    fireEvent.change(screen.getByLabelText('内容'), { target: { value: '归档后的正文' } });
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+    await waitFor(() => expect(memosApi.update).toHaveBeenCalledWith(memo.id, { content: '归档后的正文' }));
+  });
+
+  it('主动取消模板关联仍提交空字段', async () => {
+    render(<ToastProvider><MemoEditModal memo={{ ...memo, content: '保留正文' }} templates={[template]} onClose={() => undefined} onSaved={() => undefined} /></ToastProvider>);
+    fireEvent.change(screen.getByLabelText('模板'), { target: { value: '' } });
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+    await waitFor(() => expect(memosApi.update).toHaveBeenCalledWith(memo.id, { content: '保留正文', templateId: null, values: {} }));
+  });
+
   it.each([
     ['未知字段：不能丢弃\n日期：2026-10-21', true],
     ['日期：错误日期', true],

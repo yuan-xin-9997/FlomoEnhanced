@@ -42,6 +42,7 @@ export default function InsightsPage(): JSX.Element {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [exporting, setExporting] = useState(false);
+  const requestSeq = useRef(0);
 
   const range = useMemo<DayRange>(
     () => (preset === 'custom' ? customRange : rangeForPreset(preset, todayRef.current)),
@@ -61,8 +62,12 @@ export default function InsightsPage(): JSX.Element {
   }, [toast]);
 
   const load = useCallback(async (): Promise<void> => {
+    const seq = ++requestSeq.current;
+    setOverview(null);
+    setInsights(null);
     if (rangeError !== null) {
       setError(rangeError);
+      setLoading(false);
       return;
     }
     setLoading(true);
@@ -70,23 +75,27 @@ export default function InsightsPage(): JSX.Element {
     const params = { from: dayStartIso(range.from), to: dayEndIso(range.to) };
     try {
       if (templateId === '') {
-        setInsights(null);
-        setOverview(await analyticsApi.overview(params));
+        const result = await analyticsApi.overview(params);
+        if (seq !== requestSeq.current) return;
+        setOverview(result);
       } else {
-        setOverview(null);
-        setInsights(await analyticsApi.templateInsights(templateId, params));
+        const result = await analyticsApi.templateInsights(templateId, params);
+        if (seq !== requestSeq.current) return;
+        setInsights(result);
       }
     } catch (loadError) {
+      if (seq !== requestSeq.current) return;
       setOverview(null);
       setInsights(null);
       setError(errorMessage(loadError));
     } finally {
-      setLoading(false);
+      if (seq === requestSeq.current) setLoading(false);
     }
   }, [range.from, range.to, templateId, rangeError]);
 
   useEffect(() => {
     void load();
+    return () => { requestSeq.current += 1; };
   }, [load]);
 
   const onPresetChange = (next: RangePreset): void => {
@@ -95,11 +104,11 @@ export default function InsightsPage(): JSX.Element {
   };
 
   const onExportCsv = async (): Promise<void> => {
-    if (insights === null) return;
+    if (insights === null || loading || rangeError !== null || insights.template.id !== templateId) return;
     setExporting(true);
     try {
       await analyticsApi.exportCsv(
-        insights.template.id,
+        templateId,
         { from: dayStartIso(range.from), to: dayEndIso(range.to) },
         csvFallbackName(insights.template.name, todayRef.current),
       );
@@ -142,7 +151,7 @@ export default function InsightsPage(): JSX.Element {
             ))}
           </select>
           {templateId !== '' && (
-            <button type="button" className="btn" disabled={exporting || insights === null} onClick={() => void onExportCsv()}>
+            <button type="button" className="btn" disabled={exporting || loading || rangeError !== null || insights?.template.id !== templateId} onClick={() => void onExportCsv()}>
               {exporting ? '导出中…' : '导出 CSV'}
             </button>
           )}

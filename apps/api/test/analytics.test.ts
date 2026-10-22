@@ -435,6 +435,93 @@ describe('洞察分析 HTTP：认证、隔离、区间归一化、空数据、CS
 /* 2. summary / timeline / heatmap / weekday / hourOfDay / tags（手算期望值）   */
 /* -------------------------------------------------------------------------- */
 
+describe('日期字段兼容性回归', () => {
+  let ctx: TestContext;
+  let cookie = '';
+  let userId = '';
+
+  before(async () => {
+    ctx = await createTestContext({ FLOMO_TZ: TZ });
+    const session = await registerAndLogin(ctx.app, 'a3-date-regression', PASSWORD);
+    cookie = session.cookie;
+    userId = session.user.id;
+  });
+
+  after(async () => {
+    await ctx.close();
+  });
+
+  it('文本改为日期后忽略不兼容历史值，洞察和 CSV 可用且原值保留', async () => {
+    const templateId = insertTemplate(ctx.db, userId, {
+      name: '历史日期',
+      fields: [{ key: 'when', label: '日期', type: 'text' }],
+    });
+    const values = ['abc', '2026-02-01', '2026-02-30', '2026-02-02T00:00:00Z'];
+    const memoIds = values.map((value) => insertMemo(ctx.db, userId, {
+      templateId,
+      values: { when: value },
+      createdAt: '2026-03-01T01:00:00.000Z',
+    }));
+    const changed = await ctx.app.inject({
+      method: 'PATCH',
+      url: `/api/templates/${templateId}`,
+      headers: jsonHeaders(cookie),
+      payload: { fields: [{ key: 'when', label: '日期', type: 'date' }] },
+    });
+    assert.equal(changed.statusCode, 200);
+
+    const response = await getInsights({ app: ctx.app, cookie, templateId, from: '2026-03-01', to: '2026-03-01' });
+    assert.equal(response.statusCode, 200, response.body);
+    const insight = response.json() as TemplateInsights;
+    assert.equal(insight.summary.memoCount, values.length);
+    const date = insight.fields[0]?.date;
+    assert.equal(date?.min, '2026-02-01');
+    assert.equal(date?.max, '2026-02-01');
+    assert.equal(date?.spanDays, 0);
+    assert.deepEqual(date?.byMonth, [{ bucket: '2026-02-01', count: 1 }]);
+    assert.equal(date?.byWeekday.reduce((total, bucket) => total + bucket.count, 0), 1);
+
+    const csv = await ctx.app.inject({
+      method: 'GET',
+      url: `/api/analytics/templates/${templateId}/export.csv?from=2026-03-01&to=2026-03-01`,
+      headers: { cookie },
+    });
+    assert.equal(csv.statusCode, 200, csv.body);
+    for (const [index, value] of values.entries()) {
+      assert.ok(csv.body.includes(value), `CSV 应保留历史值 ${value}`);
+      const stored = ctx.db.prepare('SELECT values_json FROM memos WHERE id = ?').get(memoIds[index]!) as { values_json: string };
+      assert.deepEqual(JSON.parse(stored.values_json), { when: value });
+    }
+  });
+
+  it('带不同时区偏移的 datetime 按真实时刻取 min/max', async () => {
+    const templateId = insertTemplate(ctx.db, userId, {
+      name: '时区排序',
+      fields: [{ key: 'when', label: '时间', type: 'datetime' }],
+    });
+    const earlier = '2026-03-01T09:00:00+08:00';
+    const later = '2026-03-01T02:00:00Z';
+    for (const value of [later, earlier]) {
+      const created = await ctx.app.inject({
+        method: 'POST',
+        url: '/api/memos',
+        headers: jsonHeaders(cookie),
+        payload: { templateId, values: { when: value }, createdAt: '2026-03-01T01:00:00Z' },
+      });
+      assert.equal(created.statusCode, 201, created.body);
+    }
+
+    const response = await getInsights({ app: ctx.app, cookie, templateId, from: '2026-03-01', to: '2026-03-01' });
+    assert.equal(response.statusCode, 200, response.body);
+    const date = (response.json() as TemplateInsights).fields[0]?.date;
+    assert.equal(date?.min, earlier);
+    assert.equal(date?.max, later);
+    assert.equal(date?.spanDays, 0);
+    assert.equal(date?.byHour?.find((bucket) => bucket.hour === 9)?.count, 1);
+    assert.equal(date?.byHour?.find((bucket) => bucket.hour === 10)?.count, 1);
+  });
+});
+
 describe('模板洞察：summary / timeline / heatmap / weekday / hourOfDay / tags', () => {
   let ctx: TestContext;
   let userId = '';

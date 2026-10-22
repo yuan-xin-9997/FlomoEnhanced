@@ -41,6 +41,14 @@ xcodebuild -project FlomoEnhanced.xcodeproj -scheme FlomoEnhanced \
 
 > 模拟器机型名以 `xcrun simctl list devices available` 为准（本仓库验证机为 `iPhone Duo`）。
 
+在 Mac 上执行纯逻辑回归自检（无需运行 App 或访问服务器）：
+
+```bash
+bash apps/ios/test/run-core-selfchecks.sh
+```
+
+自检覆盖字段文本往返转换、请求与下载取消、离线登出时只清除当前服务器的会话 Cookie。
+
 ## 验收测试（UI 自动化 + 截图）
 
 ```powershell

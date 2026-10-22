@@ -276,10 +276,15 @@ struct InsightsView: View {
 
     private func loadTemplates() async {
         do {
-            templates = try await session.client.listTemplates(includeArchived: true)
+            let result = try await session.client.listTemplates(includeArchived: true)
+            try Task.checkCancellation()
+            templates = result
         } catch is CancellationError {
             return
+        } catch let urlError as URLError where urlError.code == .cancelled {
+            return
         } catch {
+            guard !Task.isCancelled else { return }
             if let api = error as? APIError, api.isUnauthenticated {
                 session.handleUnauthenticated()
             }
@@ -288,6 +293,8 @@ struct InsightsView: View {
     }
 
     private func load() async {
+        guard !Task.isCancelled else { return }
+        let key = loadKey
         guard rangeErrorText == nil else {
             overview = nil
             insights = nil
@@ -304,16 +311,20 @@ struct InsightsView: View {
         let to = Dates.dayEndIso(current.to)
 
         do {
-            if selectedTemplateId == Self.overviewKey {
+            if key.templateId == Self.overviewKey {
                 let result = try await session.client.analyticsOverview(from: from, to: to)
+                try Task.checkCancellation()
+                guard key == loadKey else { return }
                 overview = result
                 insights = nil
             } else {
                 let result = try await session.client.templateInsights(
-                    templateId: selectedTemplateId,
+                    templateId: key.templateId,
                     from: from,
                     to: to
                 )
+                try Task.checkCancellation()
+                guard key == loadKey else { return }
                 insights = result
                 overview = nil
             }
@@ -324,6 +335,7 @@ struct InsightsView: View {
         } catch let urlError as URLError where urlError.code == .cancelled {
             return
         } catch {
+            guard !Task.isCancelled, key == loadKey else { return }
             overview = nil
             insights = nil
             exported = nil

@@ -5,7 +5,9 @@
  *
  * 文本格式约定：
  * - 每个非空字段一行：`字段名：值`，分隔符支持 `： : ＝ =`；
- * - 字段名也接受字段 key；字段名重复时序列化改用 key，避免歧义；
+ * - 字段名也接受字段 key；字段名重复或与其它 key 冲突时序列化改用 key；
+ * - 数值保留原始精度；选项优先用无歧义的显示名，必要时用原始值或 JSON 字符串/数组；
+ * - 含字段行的多行文本及以双引号开头的文本用 JSON 字符串保留原文；
  * - `longtext` 的后续行（不以任何已知字段名开头）作为该字段的续行；
  * - 未出现的字段使用模板默认值（即「清空」），由调用方再做必填校验；
  * - 解析坚持「尽力填充」：能识别的字段照常写入，非法/未识别项逐条返回错误。
@@ -87,9 +89,45 @@ function fallbackText(value: FieldValue): string {
   return String(value);
 }
 
+/** 显示名无法唯一还原选项时，直接使用原始 value。 */
+function optionText(def: FieldDefinition, value: string): string {
+  const options = def.options ?? [];
+  const option = options.find((item) => item.value === value);
+  if (option === undefined) return value;
+  const label = option.label.trim();
+  const ambiguous = options.some((item) => item.value !== value &&
+    (item.label.trim() === label || item.value === label));
+  if (ambiguous || label.startsWith('"') || /[\r\n]/u.test(label) ||
+    (def.type === 'multiselect' && MULTISELECT_SEPARATORS.test(label))) return value;
+  return label;
+}
+
+function editableValueText(def: FieldDefinition, value: FieldValue, lookup: readonly LookupEntry[]): string {
+  if (def.type === 'number' || def.type === 'currency' || def.type === 'percent') return String(value);
+  if ((def.type === 'text' || def.type === 'longtext') && typeof value === 'string') {
+    const lines = value.split('\n');
+    if (value.trimStart().startsWith('"') || value.includes('\r') ||
+      (lines.length > 1 && (def.type === 'text' ||
+        lines.slice(1).some((line) => matchFieldLine(line, lookup) !== null)))) return JSON.stringify(value);
+    return value;
+  }
+  if (def.type === 'select' && typeof value === 'string') {
+    const token = optionText(def, value);
+    return /[\r\n]/u.test(token) || token.startsWith('"') ? JSON.stringify(value) : token;
+  }
+  if (def.type === 'multiselect') {
+    const values = Array.isArray(value) ? value : [String(value)];
+    const tokens = values.map((item) => optionText(def, item));
+    if (tokens.some((token) => MULTISELECT_SEPARATORS.test(token) || /[\r\n]/u.test(token) || token.startsWith('"')) ||
+      tokens[0]?.startsWith('[')) return JSON.stringify(values);
+    return tokens.join('、');
+  }
+  return formatFieldValue(def, value) || fallbackText(value);
+}
+
 /**
  * 字段值 → 文本模式文本。
- * 只输出非空字段；字段名重复时使用 key，保证可以原样解析回来。
+ * 只输出非空字段；有歧义的字段名或选项改用原始键值。
  */
 export function formatMemoText(
   fields: readonly FieldDefinition[],
@@ -100,16 +138,18 @@ export function formatMemoText(
     const label = labelOf(def);
     labelCounts.set(label, (labelCounts.get(label) ?? 0) + 1);
   }
+  const keys = new Set(fields.map((def) => def.key));
+  const lookup = buildLookup(fields);
 
   const lines: string[] = [];
   for (const def of fields) {
     const value = values[def.key];
     if (value === undefined || isFieldValueEmpty(value)) continue;
-    let text = formatFieldValue(def, value);
-    if (text === '') text = fallbackText(value);
+    const text = editableValueText(def, value, lookup);
     if (text === '') continue;
     const label = labelOf(def);
-    const token = (labelCounts.get(label) ?? 0) > 1 ? def.key : label;
+    const token = (labelCounts.get(label) ?? 0) > 1 ||
+      (label !== def.key && keys.has(label)) || /[\r\n]/u.test(label) ? def.key : label;
     lines.push(`${token}：${text}`);
   }
   return lines.join('\n');
@@ -211,11 +251,20 @@ function prepareRating(def: FieldDefinition, raw: string): PreparedValue {
 
 function prepareSelect(def: FieldDefinition, raw: string): PreparedValue {
   const text = raw.trim();
+  if (text.startsWith('"')) {
+    try {
+      const value: unknown = JSON.parse(text);
+      if (typeof value === 'string') return { ok: true, value };
+    } catch {
+      // 非 JSON 文本仍按普通选项处理，兼容手工粘贴。
+    }
+  }
   const options = def.options ?? [];
   const byValue = options.find((option) => option.value === text);
   if (byValue !== undefined) return { ok: true, value: byValue.value };
-  const byLabel = options.find((option) => option.label.trim() === text);
-  if (byLabel !== undefined) return { ok: true, value: byLabel.value };
+  const byLabel = options.filter((option) => option.label.trim() === text);
+  if (byLabel.length > 1) return { ok: false, message: `「${labelOf(def)}」的选项名称有歧义，请使用选项值` };
+  if (byLabel[0] !== undefined) return { ok: true, value: byLabel[0].value };
   // 交给 normalizeFieldValue 产生统一的「取值不在候选项中」错误
   return { ok: true, value: text };
 }
@@ -223,18 +272,20 @@ function prepareSelect(def: FieldDefinition, raw: string): PreparedValue {
 function prepareMultiselect(def: FieldDefinition, raw: string): PreparedValue {
   const text = raw.trim();
   if (text === '') return { ok: true, value: [] };
-  const options = def.options ?? [];
-  const picked = text
-    .split(MULTISELECT_SEPARATORS)
-    .map((item) => item.trim())
-    .filter((item) => item !== '')
-    .map((item) => {
-      const byValue = options.find((option) => option.value === item);
-      if (byValue !== undefined) return byValue.value;
-      const byLabel = options.find((option) => option.label.trim() === item);
-      if (byLabel !== undefined) return byLabel.value;
-      return item;
-    });
+  if (text.startsWith('[')) {
+    try {
+      const values: unknown = JSON.parse(text);
+      if (Array.isArray(values) && values.every((value) => typeof value === 'string')) return { ok: true, value: values };
+    } catch {
+      // 普通选项也可能以方括号开头。
+    }
+  }
+  const picked: string[] = [];
+  for (const item of text.split(MULTISELECT_SEPARATORS).map((part) => part.trim()).filter(Boolean)) {
+    const prepared = prepareSelect(def, item);
+    if (!prepared.ok) return prepared;
+    picked.push(String(prepared.value));
+  }
   return { ok: true, value: picked };
 }
 
@@ -242,6 +293,17 @@ function prepareMultiselect(def: FieldDefinition, raw: string): PreparedValue {
 function prepareValue(def: FieldDefinition, raw: string): PreparedValue {
   if (raw.trim() === '') return { ok: true, value: '' };
   switch (def.type) {
+    case 'text':
+    case 'longtext':
+      if (raw.trimStart().startsWith('"')) {
+        try {
+          const value: unknown = JSON.parse(raw);
+          if (typeof value === 'string') return { ok: true, value };
+        } catch {
+          // 非 JSON 文本仍保留原文。
+        }
+      }
+      return { ok: true, value: raw };
     case 'number':
     case 'currency':
     case 'percent':

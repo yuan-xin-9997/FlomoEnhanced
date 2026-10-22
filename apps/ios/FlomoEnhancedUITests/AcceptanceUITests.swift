@@ -432,7 +432,8 @@ final class AcceptanceUITests: XCTestCase {
         guard let editor = openMemoTextMode(app) else { return }
         attach("16-文本模式-编辑器")
 
-        XCTAssertTrue(paste("###：oops", into: editor, app: app), "粘贴失败")
+        let invalidText = "哈哈哈哈：哈哈哈哈哈"
+        XCTAssertTrue(paste(invalidText, into: editor, app: app), "粘贴失败")
         Thread.sleep(forTimeInterval: 1.5)
         XCTAssertTrue(
             waitFor(
@@ -442,6 +443,15 @@ final class AcceptanceUITests: XCTestCase {
             "未出现未识别行的错误提示"
         )
         attach("17-文本模式-解析报错")
+
+        app.segmentedControls["memoFieldModePicker"].buttons["模板模式"].tap()
+        app.buttons["保存"].tap()
+        XCTAssertTrue(
+            waitFor(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "请切回文本模式修正")).firstMatch, timeout: 8),
+            "切到模板模式后，非法文本仍应阻断保存"
+        )
+        app.segmentedControls["memoFieldModePicker"].buttons["文本模式"].tap()
+        XCTAssertEqual(editor.value as? String, invalidText, "模式切换丢失了原始文本")
 
         app.buttons["保存"].tap()
         Thread.sleep(forTimeInterval: 1.5)
@@ -504,6 +514,10 @@ final class AcceptanceUITests: XCTestCase {
         ).firstMatch
         XCTAssertTrue(waitFor(titleField, timeout: 8), "切回模板模式后标题未回填")
         attach("20-文本模式-切回模板模式")
+
+        app.segmentedControls["memoFieldModePicker"].buttons["文本模式"].tap()
+        XCTAssertEqual(app.textViews["memoTextFieldsInput"].value as? String, goodText, "未改字段时，合法原文也应完整保留")
+        templateModeButton.tap()
 
         // 保存 → 回到记录页，卡片出现新记录
         app.buttons["保存"].tap()

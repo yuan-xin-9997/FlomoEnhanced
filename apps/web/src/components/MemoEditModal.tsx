@@ -1,6 +1,6 @@
 /**
  * 想法编辑弹层：可改内容、字段值，并可切换/取消模板。
- * 契约要求（SPEC §8.3）：`templateId` 变更时必须同时给出 `values`，故保存时两者都提交。
+ * 契约要求（SPEC §8.3）：`templateId` 变更时必须同时给出 `values`；历史模板不可编辑时只更新正文。
  * 模板字段支持「模板模式 / 文本模式」切换（与撰写区一致）。
  */
 import { useMemo, useState } from 'react';
@@ -40,7 +40,7 @@ export default function MemoEditModal({ memo, templates, onClose, onSaved }: Mem
       id: template.id,
       name: template.name,
       icon: template.icon,
-      fields: template.fields,
+      fields: template.archivedAt === null ? template.fields : null,
     }));
     const currentId = memo.templateId;
     if (currentId !== null && !list.some((item) => item.id === currentId)) {
@@ -157,7 +157,8 @@ export default function MemoEditModal({ memo, templates, onClose, onSaved }: Mem
 
   const onSave = async (): Promise<void> => {
     const trimmed = content.trim();
-    let values: Record<string, FieldValue> = {};
+    const contentOnly = fields === null && templateId === initialId;
+    let values: Record<string, FieldValue> = contentOnly ? memo.values : {};
 
     if (fields !== null) {
       if (effectiveMode === 'text') {
@@ -180,9 +181,6 @@ export default function MemoEditModal({ memo, templates, onClose, onSaved }: Mem
         }
         values = normalized.values;
       }
-    } else if (selected !== undefined && selected !== null) {
-      // 模板定义不可用（已硬删除）：保留原值
-      values = memo.values;
     }
 
     if (trimmed === '' && isDraftEmpty(values)) {
@@ -195,7 +193,7 @@ export default function MemoEditModal({ memo, templates, onClose, onSaved }: Mem
     try {
       await memosApi.update(
         memo.id,
-        memoBodyOf({ content: trimmed, templateId: templateId === '' ? null : templateId, values }),
+        contentOnly ? { content: trimmed } : memoBodyOf({ content: trimmed, templateId: templateId === '' ? null : templateId, values }),
       );
       toast.success('已保存修改');
       onSaved();
@@ -263,7 +261,7 @@ export default function MemoEditModal({ memo, templates, onClose, onSaved }: Mem
         <div className="field-help">切换模板后需要重新填写新模板的字段值。</div>
       </div>
 
-      {selected?.fields === null && <div className="notice notice-warn">该模板已不存在，仅可编辑内容或取消模板关联。</div>}
+      {selected?.fields === null && <div className="notice notice-warn">该模板已归档或不存在，仅可编辑内容或取消模板关联。</div>}
 
       {fields !== null && (
         <>

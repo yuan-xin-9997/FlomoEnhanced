@@ -65,7 +65,6 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
 
   const app = fastify({
     logger: { level: config.logLevel },
-    trustProxy: true,
     bodyLimit: BODY_LIMIT,
     disableRequestLogging: config.logLevel === 'silent',
   });

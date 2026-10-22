@@ -4,7 +4,8 @@
 //
 //  模板字段的「文本模式」：逐行「字段名：值」的序列化与解析。
 //  规则与 packages/shared/src/memoText.ts 对齐（docs/SPEC 同步维护）：
-//  - 字段名接受 label 或 key；label 重复时序列化改用 key；
+//  - 字段名接受 label 或 key；有歧义时序列化改用 key；
+//  - 数值保留原始精度；选项必要时用原始值或 JSON 字符串 / 数组；
 //  - 分隔符支持中英文冒号 / 等号；
 //  - longtext 的后续行作为续行，空行保留；
 //  - 未出现的字段取模板默认值；
@@ -93,6 +94,7 @@ enum MemoTextDraft {
 enum MemoTextCodec {
 
     private static let separators: Set<Character> = ["：", ":", "＝", "="]
+    private static let multiselectSeparators = CharacterSet(charactersIn: "、,，;；|")
 
     /// 常见币种符号（与 Web 解析器一致，容错剥离）
     private static let currencySymbols = [
@@ -108,25 +110,83 @@ enum MemoTextCodec {
 
     // MARK: 序列化
 
-    /// 字段值 → 文本模式文本（只输出非空字段；label 重复时用 key）。
+    /// 字段值 → 文本模式文本（只输出非空字段；有歧义时保留原始键值）。
     static func format(fields: [FieldDefinition], values: [String: FieldValue]) -> String {
         var labelCounts: [String: Int] = [:]
         for def in fields {
             let label = MemoFieldDraft.label(of: def)
             labelCounts[label, default: 0] += 1
         }
+        let keys = Set(fields.map(\.key))
+        let lookup = buildLookup(fields)
 
         var lines: [String] = []
         for def in fields {
             guard let value = values[def.key], !value.isEmpty else { continue }
-            var text = FieldFormat.value(def, value)
-            if text.isEmpty { text = fallbackText(value) }
+            let text = editableValueText(def, value, lookup: lookup)
             if text.isEmpty { continue }
             let label = MemoFieldDraft.label(of: def)
-            let token = (labelCounts[label] ?? 0) > 1 ? def.key : label
+            let token = (labelCounts[label] ?? 0) > 1
+                || (label != def.key && keys.contains(label))
+                || label.rangeOfCharacter(from: .newlines) != nil ? def.key : label
             lines.append("\(token)：\(text)")
         }
         return lines.joined(separator: "\n")
+    }
+
+    private static func optionText(_ def: FieldDefinition, value: String) -> String {
+        let options = def.options ?? []
+        guard let option = options.first(where: { $0.value == value }) else { return value }
+        let label = option.label.trimmingCharacters(in: .whitespacesAndNewlines)
+        let ambiguous = options.contains { other in
+            other.value != value && (other.label.trimmingCharacters(in: .whitespacesAndNewlines) == label || other.value == label)
+        }
+        if ambiguous || label.hasPrefix("\"") || label.rangeOfCharacter(from: .newlines) != nil
+            || (def.type == .multiselect && label.rangeOfCharacter(from: multiselectSeparators) != nil) {
+            return value
+        }
+        return label
+    }
+
+    private static func editableValueText(_ def: FieldDefinition, _ value: FieldValue, lookup: [LookupEntry]) -> String {
+        switch def.type {
+        case .number, .currency, .percent:
+            return fallbackText(value)
+        case .select:
+            guard let raw = value.stringValue else { return fallbackText(value) }
+            let token = optionText(def, value: raw)
+            if token.hasPrefix("\"") || token.rangeOfCharacter(from: .newlines) != nil {
+                return jsonText(.string(raw))
+            }
+            return token
+        case .multiselect:
+            let values = value.arrayValue ?? [fallbackText(value)]
+            let tokens = values.map { optionText(def, value: $0) }
+            if tokens.contains(where: {
+                $0.rangeOfCharacter(from: multiselectSeparators) != nil
+                    || $0.rangeOfCharacter(from: .newlines) != nil || $0.hasPrefix("\"")
+            }) || tokens.first?.hasPrefix("[") == true {
+                return jsonText(.strings(values))
+            }
+            return tokens.joined(separator: "、")
+        case .text, .longtext:
+            guard let raw = value.stringValue else { return fallbackText(value) }
+            let ambiguousLines = raw.contains("\n") && (def.type == .text || raw
+                .split(separator: "\n", omittingEmptySubsequences: false).dropFirst()
+                .contains { matchFieldLine(String($0), lookup: lookup) != nil })
+            if raw.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("\"") || raw.contains("\r") || ambiguousLines {
+                return jsonText(.string(raw))
+            }
+            return raw
+        default:
+            let formatted = FieldFormat.value(def, value)
+            return formatted.isEmpty ? fallbackText(value) : formatted
+        }
+    }
+
+    private static func jsonText(_ value: FieldValue) -> String {
+        // 这里只编码字符串或字符串数组，JSON 编码不会失败。
+        String(decoding: try! JSONEncoder().encode(value), as: UTF8.self)
     }
 
     // MARK: 解析
@@ -295,6 +355,12 @@ enum MemoTextCodec {
             return prepareSelect(def, raw: raw)
         case .multiselect:
             return prepareMultiselect(def, raw: raw)
+        case .text, .longtext:
+            if raw.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("\""),
+               let value = try? JSONDecoder().decode(String.self, from: Data(raw.utf8)) {
+                return .ok(.string(value))
+            }
+            return .ok(.string(raw))
         default:
             return .ok(.string(raw))
         }
@@ -327,13 +393,20 @@ enum MemoTextCodec {
 
     private static func prepareSelect(_ def: FieldDefinition, raw: String) -> PreparedValue {
         let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if text.hasPrefix("\""), let value = try? JSONDecoder().decode(String.self, from: Data(text.utf8)) {
+            return .ok(.string(value))
+        }
         let options = def.options ?? []
         if let option = options.first(where: { $0.value == text }) {
             return .ok(.string(option.value))
         }
-        if let option = options.first(where: {
+        let byLabel = options.filter {
             $0.label.trimmingCharacters(in: .whitespacesAndNewlines) == text
-        }) {
+        }
+        if byLabel.count > 1 {
+            return .fail("「\(MemoFieldDraft.label(of: def))」的选项名称有歧义，请使用选项值")
+        }
+        if let option = byLabel.first {
             return .ok(.string(option.value))
         }
         // 交给 Normalize.value 产生统一的「取值不在候选项中」错误
@@ -343,20 +416,20 @@ enum MemoTextCodec {
     private static func prepareMultiselect(_ def: FieldDefinition, raw: String) -> PreparedValue {
         let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         if text.isEmpty { return .ok(.strings([])) }
-        let options = def.options ?? []
-        let picked = text
-            .components(separatedBy: CharacterSet(charactersIn: "、,，;；|"))
+        if text.hasPrefix("["), let values = try? JSONDecoder().decode([String].self, from: Data(text.utf8)) {
+            return .ok(.strings(values))
+        }
+        let items = text
+            .components(separatedBy: multiselectSeparators)
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
-            .map { item -> String in
-                if let option = options.first(where: { $0.value == item }) { return option.value }
-                if let option = options.first(where: {
-                    $0.label.trimmingCharacters(in: .whitespacesAndNewlines) == item
-                }) {
-                    return option.value
-                }
-                return item
+        var picked: [String] = []
+        for item in items {
+            switch prepareSelect(def, raw: item) {
+            case .ok(let value): picked.append(value.stringValue ?? "")
+            case .fail(let message): return .fail(message)
             }
+        }
         return .ok(.strings(picked))
     }
 

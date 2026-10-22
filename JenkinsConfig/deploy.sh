@@ -83,6 +83,8 @@ case "${1:-}" in
     [[ "$current_node_version" = "v$node_version" ]] \
       || die "项目自带 Node 版本不符：期望 v$node_version，实际 $current_node_version"
 
+    "$(node_bin)" "$source_root/JenkinsConfig/check-data-path.mjs" "$deploy_root"
+
     cd "$source_root"
     log "工作区：$source_root"
     [[ -f package-lock.json ]] \
@@ -123,6 +125,8 @@ case "${1:-}" in
     actual_git_url="$(git -C "$source_root" remote get-url origin)"
     [[ "$actual_git_url" = "$git_url" ]] \
       || die "工作区 origin 不是 $git_url，实际为 $actual_git_url，拒绝部署"
+
+    "$(node_bin)" "$source_root/JenkinsConfig/check-data-path.mjs" "$deploy_root"
 
     log "rsync 同步（保留 .data/、.env、.runtime/、.tools/ 等运行期内容）"
     rsync -a --delete \
